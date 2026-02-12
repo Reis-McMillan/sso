@@ -36,7 +36,7 @@ async def handle_verification(
 
         r = Identity.get(session, email)
         new_key = Identity.make_auth_key()
-        expiry_dt = datetime.now(timezone.utc) + timedelta(milliseconds=config.AUTHENTICATION_TTL)
+        expiry_dt = datetime.now(timezone.utc) + timedelta(seconds=config.AUTHENTICATION_TTL)
 
         if r:
             Identity.update(session, email, new_key, expiry_dt)
@@ -54,7 +54,7 @@ async def handle_verification(
         # Process and send email
         Verification.make_entry(session, email, vcode)
 
-        ttl_delta = timedelta(milliseconds=config.AUTHENTICATION_TTL)
+        ttl_delta = timedelta(seconds=config.AUTHENTICATION_TTL)
         identity_ttl_str = humanize.precisedelta(ttl_delta, minimum_unit="minutes")
 
         verification_url = f"{config.VERIFY_BASE_URL}/verification?{urlencode({'email': email, 'code': str(vcode)})}"

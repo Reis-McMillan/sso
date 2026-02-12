@@ -36,7 +36,7 @@ async def create_identity(
         raise HTTPException(status_code=403, detail="Not authorized to perform this action.")
 
     if not expires:
-        expires = datetime.now(timezone.utc) + timedelta(milliseconds=config.AUTHENTICATION_TTL)
+        expires = datetime.now(timezone.utc) + timedelta(seconds=config.AUTHENTICATION_TTL)
     
     key = Identity.make_auth_key()
     try:
@@ -59,7 +59,7 @@ async def get_identity_cookie(
         raise HTTPException(status_code=404, detail="No Identity found.")
 
     value, iv = encrypt_cookie(this_identity.email, this_identity.auth_key)
-    max_age = int(config.AUTHENTICATION_TTL / 1000)
+    max_age = int(config.AUTHENTICATION_TTL)
     cookie_opts = {
         "httponly": True,
         "secure": True,

@@ -21,6 +21,6 @@ def create_signed_jwt(email: str, roles: list[str]) -> str:
         "sub": email,
         "roles": roles,
         "iat": now,
-        "exp": now + timedelta(seconds=config.JWT_EXPIRY_SECONDS),
+        "exp": now + timedelta(seconds=config.JWT_EXPIRY),
     }
     return jwt.encode(payload, _get_private_key(), algorithm="EdDSA")

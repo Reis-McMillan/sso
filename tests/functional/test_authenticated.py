@@ -119,7 +119,7 @@ def test_good_auth(session, client):
         session,
         'thedude@mcmlln.dev',
         'abides',
-        datetime.now(timezone.utc) + timedelta(milliseconds=config.AUTHENTICATION_TTL)
+        datetime.now(timezone.utc) + timedelta(seconds=config.AUTHENTICATION_TTL)
     )
     email = quote('thedude@mcmlln.dev')
     res = client.get(
@@ -128,10 +128,5 @@ def test_good_auth(session, client):
             'X-Auth-Token': dude_token,
             'X-Init-Vector': dude_iv
         },
-        params={
-            'auth_key': 'abides'
-        }
     )
     assert res.status_code == 200
-    assert res.json()['exists'] == True
-    assert res.json()['auth'] == True

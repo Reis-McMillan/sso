@@ -13,7 +13,7 @@ def test_transform_email():
 
 def test_new(session):
     auth_key = Identity.make_auth_key()
-    expires = datetime.now(timezone.utc) + timedelta(milliseconds=config.AUTHENTICATION_TTL)
+    expires = datetime.now(timezone.utc) + timedelta(seconds=config.AUTHENTICATION_TTL)
     Identity.new(
         session,
         'Bob72@example.com',
