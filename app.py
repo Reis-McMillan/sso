@@ -4,6 +4,7 @@ from fastapi import Depends, FastAPI
 
 from middleware.authenticated import authenticate_user
 from middleware.logging import RequestLoggingMiddleware
+from database import initialize_db
 from routes import identity, verification
 from utils.logging import setup_logging, shutdown_logging
 
@@ -11,6 +12,7 @@ from utils.logging import setup_logging, shutdown_logging
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     setup_logging()
+    initialize_db()
     logging.getLogger("sso").info("SSO service starting")
     yield
     logging.getLogger("sso").info("SSO service shutting down")

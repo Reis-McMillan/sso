@@ -1,6 +1,7 @@
 import logging
 import logging.handlers
 import queue
+import sys
 import threading
 import httpx
 
@@ -77,10 +78,6 @@ class OpenObserveHandler(logging.Handler):
 def setup_logging(level=logging.INFO):
     global _listener
 
-    if not getattr(config, "LOGGING_ENABLED", True):
-        logging.disable(logging.CRITICAL)
-        return
-
     root = logging.getLogger()
     root.setLevel(level)
 
@@ -89,17 +86,18 @@ def setup_logging(level=logging.INFO):
         datefmt="%Y-%m-%d %H:%M:%S",
     )
 
-    stream_handler = logging.StreamHandler()
+    stream_handler = logging.StreamHandler(stream=sys.stdout)
     stream_handler.setFormatter(formatter)
 
     handlers = [stream_handler]
 
-    token = getattr(config, "OPENOBSERVE_TOKEN", None)
-    endpoint = getattr(config, "OPENOBSERVE_ENDPOINT", None)
-    if token and endpoint:
-        oo_handler = OpenObserveHandler(endpoint, token)
-        oo_handler.setFormatter(formatter)
-        handlers.append(oo_handler)
+    if getattr(config, "LOGGING_ENABLED", False):
+        token = getattr(config, "OPENOBSERVE_TOKEN", None)
+        endpoint = getattr(config, "OPENOBSERVE_ENDPOINT", None)
+        if token and endpoint:
+            oo_handler = OpenObserveHandler(endpoint, token)
+            oo_handler.setFormatter(formatter)
+            handlers.append(oo_handler)
 
     log_queue = queue.Queue(-1)
     queue_handler = logging.handlers.QueueHandler(log_queue)

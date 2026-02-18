@@ -99,7 +99,8 @@ async def get_identity(
         return r
 
     if (request.state.auth_cache.email != email):
-        logger.warning("Forbidden: %s tried to access %s", request.state.auth_cache.email, email)
+        if r:
+            logger.warning("Forbidden: %s tried to access %s", request.state.auth_cache.email, email)
         raise HTTPException(status_code=403, detail="Not authorized to perform this action.")
 
     is_expired = r.expires < datetime.now(timezone.utc)

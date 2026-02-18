@@ -24,8 +24,8 @@ async def test_email():
 
     response = await aiosmtplib.send(
         message,
-        hostname=config.EMAIL_HOST,
-        port=config.EMAIL_PORT,
+        hostname=config.SMTP_ENDPOINT,
+        port=config.SMTP_PORT,
         username=config.USERNAME_SMTP,
         password=config.PASSWORD_SMTP,
         start_tls=True,

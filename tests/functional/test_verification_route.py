@@ -8,7 +8,7 @@ from models import Verification, Identity
 def test_request_verification(client, session):
     with patch('routes.verification.aiosmtplib.send', new_callable=AsyncMock):
         res = client.post(
-            '/verification',
+            '/verification/',
             params={'email': 'newuser@example.com'}
         )
     assert res.status_code == 201
@@ -17,7 +17,7 @@ def test_request_verification(client, session):
 def test_request_verification_creates_entry(client, session):
     with patch('routes.verification.aiosmtplib.send', new_callable=AsyncMock):
         client.post(
-            '/verification',
+            '/verification/',
             params={'email': 'entrycheck@example.com'}
         )
 
@@ -35,14 +35,13 @@ def test_verify_valid_code(client, session):
     code = Verification.make_code()
     Verification.make_entry(session, 'verifytest@example.com', code)
 
-    res = client.post(
-        '/verification',
+    res = client.get(
+        '/verification/',
         params={'email': 'verifytest@example.com', 'code': str(code)}
     )
-    assert res.status_code == 201
-    res_json = res.json()
-    assert 'auth_key' in res_json
-    assert res_json['authentication_ttl'] == config.AUTHENTICATION_TTL
+    assert res.status_code == 200
+    assert config.ENCRYPT_COOKIE_NAME in res.cookies
+    assert f"{config.ENCRYPT_COOKIE_NAME}_iv" in res.cookies
 
 
 def test_verify_creates_identity(client, session):
@@ -64,21 +63,24 @@ def test_verify_updates_existing_identity(client, session):
     code = Verification.make_code()
     Verification.make_entry(session, 'existinguser@example.com', code)
 
-    res = client.post(
-        '/verification',
+    res = client.get(
+        '/verification/',
         params={'email': 'existinguser@example.com', 'code': str(code)}
     )
-    assert res.status_code == 201
-    res_json = res.json()
-    assert res_json['auth_key'] != old_key
+    assert res.status_code == 200
+    assert config.ENCRYPT_COOKIE_NAME in res.cookies
+
+    session.expire_all()
+    identity = Identity.get(session, 'existinguser@example.com')
+    assert identity.auth_key != old_key
 
 
 def test_verify_invalid_code(client, session):
     code = Verification.make_code()
     Verification.make_entry(session, 'invalidcode@example.com', code)
 
-    res = client.post(
-        '/verification',
+    res = client.get(
+        '/verification/',
         params={'email': 'invalidcode@example.com', 'code': '000000'}
     )
     assert res.status_code == 404
@@ -92,8 +94,8 @@ def test_verify_expired_code(client, session):
     session.add(entry)
     session.commit()
 
-    res = client.post(
-        '/verification',
+    res = client.get(
+        '/verification/',
         params={'email': 'expiredcode@example.com', 'code': str(code)}
     )
     assert res.status_code == 404
@@ -101,16 +103,16 @@ def test_verify_expired_code(client, session):
 
 
 def test_verify_nonexistent_email(client):
-    res = client.post(
-        '/verification',
+    res = client.get(
+        '/verification/',
         params={'email': 'nobody@example.com', 'code': '123456'}
     )
     assert res.status_code == 404
 
 
 def test_verify_non_numeric_code(client):
-    res = client.post(
-        '/verification',
+    res = client.get(
+        '/verification/',
         params={'email': 'test@example.com', 'code': 'abc'}
     )
     assert res.status_code == 404
@@ -119,13 +121,18 @@ def test_verify_non_numeric_code(client):
 def test_email_send_failure(client, session):
     with patch('routes.verification.aiosmtplib.send', new_callable=AsyncMock, side_effect=Exception('SMTP error')):
         res = client.post(
-            '/verification',
+            '/verification/',
             params={'email': 'fail@example.com'}
         )
     assert res.status_code == 500
     assert res.json()['detail'] == 'Email service failed.'
 
 
-def test_missing_email(client):
-    res = client.post('/verification')
+def test_missing_email_post(client):
+    res = client.post('/verification/')
+    assert res.status_code == 422
+
+
+def test_missing_params_get(client):
+    res = client.get('/verification/')
     assert res.status_code == 422
