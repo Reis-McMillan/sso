@@ -39,7 +39,7 @@ jobs:
         run: cp config/config.test.py config/config.py
 
       - name: Run tests
-        run: pytest
+        run: python -m pytest tests/
 
   build-and-push:
     needs: test
