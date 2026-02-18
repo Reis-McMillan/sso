@@ -49,9 +49,9 @@ class Verification(SQLModel, table=True):
         return db_entry
 
     @classmethod
-    def verify(cls, session: Session, email: str, vcode: int, delta_ms: int):
+    def verify(cls, session: Session, email: str, vcode: int, delta: int):
         email = cls.transform_email(email)
-        expiry_limit = datetime.now(timezone.utc) - timedelta(milliseconds=delta_ms)
+        expiry_limit = datetime.now(timezone.utc) - timedelta(seconds=delta)
         
         # 1. Find the record
         statement = select(cls).where(

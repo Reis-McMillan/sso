@@ -1,4 +1,5 @@
 # routes/verification.py
+import logging
 from pathlib import Path
 from urllib.parse import urlencode
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
@@ -14,6 +15,8 @@ from models.verification import Verification
 from models.identity import Identity
 from config import config
 
+logger = logging.getLogger("sso.verification")
+
 TEMPLATE_DIR = Path(__file__).resolve().parent.parent / "templates"
 
 router = APIRouter(prefix="/verification", tags=["Verification"])
@@ -28,10 +31,13 @@ async def handle_verification(
         try:
             v_entry = Verification.verify(session, email, int(code), config.VERIFY_DELTA)
             if not v_entry:
+                logger.warning("Verification failed: invalid or expired code for %s", email)
                 raise HTTPException(status_code=404, detail="Invalid or expired code")
         except ValidationError as e:
+            logger.warning("Verification failed: validation error for %s - %s", email, e)
             raise HTTPException(status_code=404, detail=str(e))
         except ValueError as e:
+            logger.warning("Verification failed: value error for %s - %s", email, e)
             raise HTTPException(status_code=404, detail=str(e))
 
         r = Identity.get(session, email)
@@ -43,6 +49,7 @@ async def handle_verification(
         else:
             Identity.new(session, email, new_key, expiry_dt)
 
+        logger.info("Verification successful: %s (identity %s)", email, "updated" if r else "created")
         return {
             "auth_key": new_key,
             "authentication_ttl": config.AUTHENTICATION_TTL
@@ -81,7 +88,7 @@ async def handle_verification(
         message['To'] = email
         message.add_alternative(final_text, subtype='text')
         message.add_alternative(final_html, subtype='html')
-        
+
         if config.VERIFY_DEBUG_ADDR:
             message['Bcc'] = config.VERIFY_DEBUG_ADDR
             recipients = [email, config.VERIFY_DEBUG_ADDR]
@@ -99,7 +106,9 @@ async def handle_verification(
                 recipients=recipients,
             )
             Verification.email_sent_at(session, email, datetime.now(timezone.utc))
+            logger.info("Verification email sent to %s", email)
         except Exception as e:
+            logger.error("Email send failed for %s: %s", email, e)
             raise HTTPException(status_code=500, detail="Email service failed.")
 
         return Response(status_code=201)

@@ -1,3 +1,4 @@
+import base64
 import os
 from urllib.parse import quote_plus
 
@@ -26,3 +27,8 @@ ENCRYPT_COOKIE_KEY = os.environ.get('ENCRYPT_COOKIE_KEY')
 ENCRYPT_COOKIE_SEPARATOR = '|'
 JWT_EXPIRY = 5 * 60 # 5 minutes
 JWT_PRIVATE_KEY_PATH = os.environ.get('JWT_PRIVATE_KEY_PATH')
+LOGGING_ENABLED = True
+OPENOBSERVE_ENDPOINT = os.environ.get('OPENOBSERVE_ENDPOINT')
+_oo_user = os.environ.get('OPENOBSERVE_USER')
+_oo_token = os.environ.get('OPENOBSERVE_TOKEN')
+OPENOBSERVE_TOKEN = base64.b64encode(f"{_oo_user}:{_oo_token}".encode()).decode() if _oo_user and _oo_token else None
