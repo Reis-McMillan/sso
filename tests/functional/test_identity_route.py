@@ -153,6 +153,7 @@ def test_update(admin_creds, client):
 
 
 def test_update_no_admin(client, session):
+    session.expire_all()
     id = Identity.get(session, 'stewie.griffin@quahog.com')
     token, iv = encrypt_cookie(id.email, id.auth_key)
     email = quote('stewie.griffin@quahog.com')
@@ -211,6 +212,7 @@ def test_delete_no_id(admin_creds, client):
 
 
 def test_delete_not_admin(client, session):
+    session.expire_all()
     id = Identity.get(session, 'stewie.griffin@quahog.com')
     token, iv = encrypt_cookie(id.email, id.auth_key)
     email = quote('peter.griffin@quahog.com')
@@ -223,6 +225,7 @@ def test_delete_not_admin(client, session):
 
 
 def test_cookie(client, session):
+    session.expire_all()
     id = Identity.get(session, 'stewie.griffin@quahog.com')
     token, iv = encrypt_cookie(id.email, id.auth_key)
     res = client.get(
@@ -233,6 +236,7 @@ def test_cookie(client, session):
 
 
 def test_logout(client, session):
+    session.expire_all()
     id = Identity.get(session, 'stewie.griffin@quahog.com')
     old_auth_key = id.auth_key
     token, iv = encrypt_cookie(id.email, id.auth_key)
@@ -268,6 +272,7 @@ def test_admin_logout_no_id(admin_creds, client):
 
 
 def test_logout_not_admin(client, session):
+    session.expire_all()
     id = Identity.get(session, 'stewie.griffin@quahog.com')
     token, iv = encrypt_cookie(id.email, id.auth_key)
     email = quote('stewie.griffin@quahog.com')

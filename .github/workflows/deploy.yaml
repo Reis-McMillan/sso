@@ -38,6 +38,11 @@ jobs:
       - name: Use test config
         run: cp config/config.test.py config/config.py
 
+      - name: Generate test JWT key
+        run: |
+          openssl genpkey -algorithm ed25519 -out test_key.pem
+          echo "JWT_PRIVATE_KEY_PATH=$PWD/test_key.pem" >> $GITHUB_ENV
+
       - name: Run tests
         run: python -m pytest tests/
 
