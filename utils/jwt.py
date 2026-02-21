@@ -1,6 +1,6 @@
 import jwt
 from datetime import datetime, timedelta, timezone
-from cryptography.hazmat.primitives.serialization import load_pem_private_key
+from cryptography.hazmat.primitives.serialization import load_pem_private_key, Encoding, PublicFormat
 
 from config import config
 
@@ -13,6 +13,12 @@ def _get_private_key():
         with open(config.JWT_PRIVATE_KEY_PATH, "rb") as f:
             _private_key = load_pem_private_key(f.read(), password=None)
     return _private_key
+
+
+def get_public_key_pem() -> str:
+    return _get_private_key().public_key().public_bytes(
+        Encoding.PEM, PublicFormat.SubjectPublicKeyInfo
+    ).decode()
 
 
 def create_signed_jwt(email: str, roles: list[str]) -> str:

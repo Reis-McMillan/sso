@@ -5,7 +5,7 @@ from fastapi import Depends, FastAPI
 from middleware.authenticated import authenticate_user
 from middleware.logging import RequestLoggingMiddleware
 from database import initialize_db
-from routes import identity, verification
+from routes import identity, jwks, verification
 from utils.logging import setup_logging, shutdown_logging
 
 
@@ -24,3 +24,4 @@ app = FastAPI(lifespan=lifespan)
 app.add_middleware(RequestLoggingMiddleware)
 app.include_router(identity.router, dependencies=[Depends(authenticate_user)])
 app.include_router(verification.router)
+app.include_router(jwks.router)
