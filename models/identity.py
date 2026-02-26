@@ -76,32 +76,39 @@ class Identity(SQLModel, table=True):
         return db_identity
 
     @classmethod
-    def update(cls, session: Session, email: str, new_key: str, expires: datetime):
+    def update(
+        cls,
+        session: Session,
+        email: str,
+        new_email: str = None,
+        new_key: str = None,
+        new_expires: datetime = None,
+        new_roles: list[Role] = None
+    ):
         email = cls.transform_email(email)
         db_identity = cls.get(session, email)
+        if not db_identity:
+            return None
+        new_roles = set(db_identity.roles + new_roles) if new_roles else db_identity.roles
         if db_identity:
             validated = cls.model_validate({
-                "email": db_identity.email,
-                "auth_key": new_key,
-                "expires": expires
+                "email": new_email if new_email else db_identity.email,
+                "auth_key": new_key if new_key else db_identity.auth_key,
+                "expires": new_expires if new_expires else db_identity.expires,
+                "roles": list(new_roles)
             })
+            db_identity.email = validated.email
             db_identity.auth_key = validated.auth_key
             db_identity.expires = validated.expires
+            db_identity.roles = validated.roles
             session.add(db_identity)
             session.commit()
             session.refresh(db_identity)
         return db_identity
 
     @classmethod
-    def update_roles(cls, session: Session, email: str, new_roles: List[Role]):
-        email = cls.transform_email(email)
-        db_identity = cls.get(session, email)
-        if db_identity:
-            db_identity.roles = new_roles
-            session.add(db_identity)
-            session.commit()
-            session.refresh(db_identity)
-        return db_identity
+    def update_roles(cls, session: Session, email: str, roles: list[Role]):
+        return cls.update(session, email, new_roles=roles)
 
     @classmethod
     def all(cls, session: Session):

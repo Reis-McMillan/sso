@@ -1,7 +1,6 @@
 # routes/verification.py
 import logging
 from pathlib import Path
-from urllib.parse import urlencode
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlmodel import Session
 from datetime import datetime, timedelta, timezone
@@ -41,13 +40,14 @@ async def verify_code(
         raise HTTPException(status_code=404, detail=str(e))
 
     r = Identity.get(session, email)
-    new_key = Identity.make_auth_key()
-    expiry_dt = datetime.now(timezone.utc) + timedelta(seconds=config.AUTHENTICATION_TTL)
 
-    if r:
-        r = Identity.update(session, email, new_key, expiry_dt)
-    else:
-        r = Identity.new(session, email, new_key, expiry_dt)
+    if not r or r.expires < datetime.now(timezone.utc):
+        new_key = Identity.make_auth_key()
+        expiry_dt = datetime.now(timezone.utc) + timedelta(seconds=config.AUTHENTICATION_TTL)
+        if r:
+            r = Identity.update(session, email, new_key=new_key, new_expires=expiry_dt)
+        else:
+            r = Identity.new(session, email, new_key, expiry_dt)
 
     logger.info("Verification successful: %s (identity %s)", email, "updated" if r else "created")
     value, iv = encrypt_cookie(r.email, r.auth_key)
@@ -76,10 +76,8 @@ async def handle_verification(
     # Process and send email
     Verification.make_entry(session, email, vcode)
 
-    ttl_delta = timedelta(seconds=config.AUTHENTICATION_TTL)
+    ttl_delta = timedelta(seconds=config.VERIFY_DELTA)
     identity_ttl_str = humanize.precisedelta(ttl_delta, minimum_unit="minutes")
-
-    verification_url = f"{config.VERIFY_BASE_URL}/verification?{urlencode({'email': email, 'code': str(vcode)})}"
 
     # Load templates and replace placeholders
     text_template = (TEMPLATE_DIR / "verification.txt").read_text()
@@ -88,7 +86,6 @@ async def handle_verification(
     replacements = {
         "${code}": str(vcode),
         "${identity_ttl}": identity_ttl_str,
-        "${verification_url}": verification_url,
     }
 
     final_text = text_template

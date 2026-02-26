@@ -7,6 +7,13 @@ from app import app
 from database import initialize_db, get_session, engine
 from models import Identity
 from utils.cookie import encrypt_cookie
+from utils.jwt import create_signed_jwt
+
+
+@pytest.fixture(scope="module")
+def admin_jwt():
+    return create_signed_jwt('admin@mcmlln.dev', ['admin'])
+
 
 @pytest.fixture(scope="module")
 def admin_creds():
@@ -22,6 +29,9 @@ def service_user_creds():
 
 @pytest.fixture(scope='module')
 def session():
+    # Drop existing tables to ensure clean state
+    SQLModel.metadata.drop_all(engine)
+    # Recreate tables
     initialize_db()
 
     session = next(get_session())
@@ -38,15 +48,15 @@ def session():
         'jd vance erika kirk baby',
         datetime.now(timezone.utc) + timedelta(days=30)
     )
-    Identity.update_roles(
+    Identity.update(
         session,
         'admin@mcmlln.dev',
-        ['admin']
+        new_roles=['admin']
     )
-    Identity.update_roles(
+    Identity.update(
         session,
         'service@mcmlln.dev',
-        ['service-account']
+        new_roles=['service-account']
     )
 
     yield session

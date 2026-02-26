@@ -1,6 +1,7 @@
 import logging
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import Response, RedirectResponse
+from fastapi.responses import Response
+from pydantic import ValidationError
 from sqlmodel import Session
 from sqlalchemy.exc import IntegrityError
 from datetime import datetime, timedelta, timezone
@@ -8,10 +9,9 @@ from typing import List, Optional
 from urllib.parse import quote
 
 from database import get_session
-from models.identity import Identity
+from models.identity import Identity, Role
 from config import config
 from utils.cookie import encrypt_cookie
-from utils.jwt import create_signed_jwt
 
 logger = logging.getLogger("sso.identity")
 
@@ -49,37 +49,12 @@ async def create_identity(
     except IntegrityError as e:
         logger.warning("Identity creation failed: duplicate email %s", email)
         raise HTTPException(status_code=400)
+    except ValidationError as e:
+        logger.warning("Identity creation failed: validation error for %s - %s", email, e)
+        raise HTTPException(status_code=400, detail=str(e))
     url_safe_email = quote(new_id.email)
     logger.info("Identity created: %s by %s", email, request.state.auth_cache.email)
     return Response(status_code=201, headers={"Location": f"/identity/{url_safe_email}"})
-
-
-@router.get("/cookie")
-async def get_identity_cookie(
-    request: Request = None,
-    session: Session = Depends(get_session)
-):
-    target_identity = request.state.auth_cache.email
-
-    this_identity = Identity.get(session, target_identity)
-    if not this_identity:
-        logger.warning("Cookie request: identity not found for %s", target_identity)
-        raise HTTPException(status_code=404, detail="No Identity found.")
-
-    value, iv = encrypt_cookie(this_identity.email, this_identity.auth_key)
-    max_age = int(config.AUTHENTICATION_TTL)
-    cookie_opts = {
-        "httponly": True,
-        "secure": True,
-        "samesite": "strict",
-        "max_age": max_age,
-        "path": "/",
-    }
-    response = Response(status_code=200)
-    response.set_cookie(key=config.ENCRYPT_COOKIE_NAME, value=value, **cookie_opts)
-    response.set_cookie(key=f"{config.ENCRYPT_COOKIE_NAME}_iv", value=iv, **cookie_opts)
-    logger.info("Cookie issued for %s", target_identity)
-    return response
 
 
 @router.get("/{email}")
@@ -88,34 +63,25 @@ async def get_identity(
     request: Request = None,
     session: Session = Depends(get_session)
 ):
-    user_roles = getattr(request.state.auth_cache, "roles", [])
     r = Identity.get(session, email)
 
-    # Admin Logic
-    if "admin" in user_roles:
-        if not r:
-            logger.warning("Identity not found: %s (admin lookup)", email)
-            raise HTTPException(status_code=404, detail="Identity not found")
-        return r
-
-    if (request.state.auth_cache.email != email):
-        if r:
-            logger.warning("Forbidden: %s tried to access %s", request.state.auth_cache.email, email)
+    if "admin" not in request.state.auth_cache.roles:
+        logger.warning("Forbidden: %s tried to get identity %s", request.state.auth_cache.email, email)
         raise HTTPException(status_code=403, detail="Not authorized to perform this action.")
-
-    is_expired = r.expires < datetime.now(timezone.utc)
-    if is_expired:
-        url = request.url_for('handle_verification')
-        url.include_query_params(email=request.state.auth_cache.email)
-        return RedirectResponse(url)
-
-    return create_signed_jwt(r.email, r.roles)
+    
+    if not r:
+        logger.warning("Identity not found: %s (admin lookup)", email)
+        raise HTTPException(status_code=404, detail="Identity not found")
+    return r
 
 
 @router.put("/{email}", status_code=201)
 async def update_identity(
     email: str,
-    expires: datetime,
+    new_email: Optional[str] = None,
+    new_key: Optional[str] = None,
+    new_expires: Optional[datetime] = None,
+    new_roles: Optional[list[Role]] = None,
     request: Request = None,
     session: Session = Depends(get_session),
 ):
@@ -123,8 +89,18 @@ async def update_identity(
         logger.warning("Forbidden: %s tried to update identity %s", request.state.auth_cache.email, email)
         raise HTTPException(status_code=403, detail="Not authorized to perform this action.")
 
-    key = Identity.make_auth_key()
-    updated = Identity.update(session, email, key, expires)
+    try:
+        updated = Identity.update(
+            session,
+            email,
+            new_email=new_email,
+            new_key=new_key,
+            new_expires=new_expires,
+            new_roles=new_roles
+        )
+    except ValidationError as e:
+        logger.warning("Identity update failed: validation error for %s - %s", email, e)
+        raise HTTPException(status_code=400, detail=str(e))
     if not updated:
         logger.warning("Identity update failed: %s not found", email)
         raise HTTPException(status_code=404, detail="No Identity found.")
@@ -133,21 +109,21 @@ async def update_identity(
     return Response(status_code=201, headers={"Location": f"/identity/{url_safe_email}"})
 
 
-@router.delete("/{id}", status_code=204)
+@router.delete("/{email}", status_code=204)
 async def delete_identity(
-    id: str,
+    email: str,
     request: Request = None,
     session: Session = Depends(get_session)
 ):
     if "admin" not in request.state.auth_cache.roles:
-        logger.warning("Forbidden: %s tried to delete identity %s", request.state.auth_cache.email, id)
+        logger.warning("Forbidden: %s tried to delete identity %s", request.state.auth_cache.email, email)
         raise HTTPException(status_code=403, detail="Not authorized to perform this action.")
 
-    r = Identity.close(session, id)
+    r = Identity.close(session, email)
     if not r:
-        logger.warning("Identity delete failed: %s not found", id)
+        logger.warning("Identity delete failed: %s not found", email)
         raise HTTPException(status_code=404, detail="Identity not found")
-    logger.info("Identity deleted: %s by %s", id, request.state.auth_cache.email)
+    logger.info("Identity deleted: %s by %s", email, request.state.auth_cache.email)
     return Response(status_code=204)
 
 
@@ -159,7 +135,7 @@ async def logout(
     logout_target = request.state.auth_cache.email
     new_key = Identity.make_auth_key()
     existing = Identity.get(session, logout_target)
-    Identity.update(session, logout_target, new_key, existing.expires)
+    Identity.update(session, logout_target, new_key=new_key, new_expires=existing.expires)
     logger.info("Logout: %s", logout_target)
     return Response(status_code=201)
 
@@ -180,6 +156,6 @@ async def logout_identity(
         logger.warning("Admin logout failed: identity %s not found", id)
         raise HTTPException(status_code=404)
 
-    Identity.update(session, id, new_key, existing.expires)
+    Identity.update(session, id, new_key=new_key, new_expires=existing.expires)
     logger.info("Admin logout: %s by %s", id, request.state.auth_cache.email)
     return Response(status_code=201)
