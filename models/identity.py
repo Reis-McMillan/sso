@@ -11,6 +11,7 @@ from config import config
 class Role(str, Enum):
     ADMIN = 'admin'
     SERVICE_ACCOUNT = 'service-account'
+    COIN_MANAGER = 'coin-manager'
     DEFAULT = 'default'
 
 class Identity(SQLModel, table=True):
