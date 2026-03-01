@@ -89,13 +89,14 @@ class Identity(SQLModel, table=True):
         db_identity = cls.get(session, email)
         if not db_identity:
             return None
-        new_roles = set(db_identity.roles + new_roles) if new_roles else db_identity.roles
+        if new_roles is not None and len(new_roles) == 0:
+            new_roles = [Role.DEFAULT]
         if db_identity:
             validated = cls.model_validate({
                 "email": new_email if new_email else db_identity.email,
                 "auth_key": new_key if new_key else db_identity.auth_key,
                 "expires": new_expires if new_expires else db_identity.expires,
-                "roles": list(new_roles)
+                "roles": new_roles if new_roles is not None else db_identity.roles
             })
             db_identity.email = validated.email
             db_identity.auth_key = validated.auth_key

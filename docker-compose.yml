@@ -24,10 +24,12 @@ services:
       DATABASE_URL: postgresql://sso:sso@postgres:5432/sso
       USERNAME_SMTP: ${USERNAME_SMTP}
       PASSWORD_SMTP: ${PASSWORD_SMTP}
-      JWT_PRIVATE_KEY_PATH: ${JWT_PRIVATE_KEY_PATH}
+      JWT_PRIVATE_KEY_PATH: /secrets/jwt/private-key.pem
       OPENOBSERVE_ENDPOINT: ${OPENOBSERVE_ENDPOINT}
       OPENOBSERVE_USER: ${OPENOBSERVE_USER}
       OPENOBSERVE_TOKEN: ${OPENOBSERVE_TOKEN}
+    volumes:
+      - ${JWT_PRIVATE_KEY_PATH}:/secrets/jwt/private-key.pem:ro
 
 volumes:
   pgdata:

@@ -2,8 +2,9 @@ from datetime import datetime, timezone
 import logging
 from sqlmodel import Session
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import RedirectResponse
+from fastapi.responses import JSONResponse
 
+from config import config
 from database import get_session
 from models.identity import Identity
 from utils.jwt import create_signed_jwt
@@ -24,4 +25,15 @@ async def get_jwt(
         logger.warning("Identity not found: %s (refresh)", email)
         raise HTTPException(status_code=404, detail="Identity not found")   
 
-    return create_signed_jwt(r.email, r.roles)
+    token = create_signed_jwt(r.email, r.roles)
+    response = JSONResponse(content={"token": token})
+    response.set_cookie(
+        key="jwt",
+        value=token,
+        max_age=config.JWT_EXPIRY,
+        httponly=True,
+        secure=True,
+        samesite="strict",
+        path="/",
+    )
+    return response

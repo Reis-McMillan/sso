@@ -117,7 +117,7 @@ def test_update(admin_jwt, client):
     res = client.put(
         f'/identity/{email}',
         headers={'Authorization': f'Bearer {admin_jwt}'},
-        params={'new_expires': expires}
+        json={'new_expires': expires}
     )
     assert res.status_code == 201
     assert res.headers['Location'] == f'/identity/{email}'
@@ -130,7 +130,7 @@ def test_update_no_admin(client, session):
     res = client.put(
         f'/identity/{email}',
         headers={'Authorization': f'Bearer {jwt}'},
-        params={'new_expires': expires}
+        json={'new_expires': expires}
     )
     assert res.status_code == 403
     assert res.json()['detail'] == 'Not authorized to perform this action.'
@@ -141,7 +141,8 @@ def test_update_no_params(admin_jwt, client):
     email = quote('stewie.griffin@quahog.com')
     res = client.put(
         f'/identity/{email}',
-        headers={'Authorization': f'Bearer {admin_jwt}'}
+        headers={'Authorization': f'Bearer {admin_jwt}'},
+        json={}
     )
     assert res.status_code == 201
     assert res.headers['Location'] == f'/identity/{email}'
@@ -153,7 +154,7 @@ def test_update_no_id(admin_jwt, client):
     res = client.put(
         f'/identity/{email}',
         headers={'Authorization': f'Bearer {admin_jwt}'},
-        params={'new_expires': expires}
+        json={'new_expires': expires}
     )
     assert res.status_code == 404
     assert res.json()['detail'] == 'No Identity found.'

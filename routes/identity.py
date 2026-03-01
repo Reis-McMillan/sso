@@ -1,7 +1,7 @@
 import logging
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import Response
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 from sqlmodel import Session
 from sqlalchemy.exc import IntegrityError
 from datetime import datetime, timedelta, timezone
@@ -75,13 +75,16 @@ async def get_identity(
     return r
 
 
+class IdentityUpdate(BaseModel):
+    new_email: Optional[str] = None
+    new_key: Optional[str] = None
+    new_expires: Optional[datetime] = None
+    new_roles: Optional[list[Role]] = None
+
 @router.put("/{email}", status_code=201)
 async def update_identity(
     email: str,
-    new_email: Optional[str] = None,
-    new_key: Optional[str] = None,
-    new_expires: Optional[datetime] = None,
-    new_roles: Optional[list[Role]] = None,
+    update: IdentityUpdate,
     request: Request = None,
     session: Session = Depends(get_session),
 ):
@@ -93,10 +96,10 @@ async def update_identity(
         updated = Identity.update(
             session,
             email,
-            new_email=new_email,
-            new_key=new_key,
-            new_expires=new_expires,
-            new_roles=new_roles
+            new_email=update.new_email,
+            new_key=update.new_key,
+            new_expires=update.new_expires,
+            new_roles=update.new_roles
         )
     except ValidationError as e:
         logger.warning("Identity update failed: validation error for %s - %s", email, e)

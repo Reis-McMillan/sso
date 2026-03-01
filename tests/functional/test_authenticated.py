@@ -23,7 +23,8 @@ def test_cookie_auth_success(session, client, admin_creds):
         headers={'X-Auth-Token': token, 'X-Init-Vector': iv}
     )
     assert res.status_code == 200
-    assert len(res.text) > 0
+    assert 'token' in res.json()
+    assert res.cookies.get('jwt') is not None
 
 
 def test_cookie_auth_no_auth_token(client):
@@ -116,7 +117,7 @@ def test_jwt_auth_success(session, client, admin_jwt):
 def test_jwt_auth_no_authorization_header(client):
     res = client.get('/identity')
     assert res.status_code == 401
-    assert res.json()['detail'] == 'No Authorization header set'
+    assert res.json()['detail'] == 'Not authenticated'
 
 
 def test_jwt_auth_bad_format(client):
@@ -125,7 +126,7 @@ def test_jwt_auth_bad_format(client):
         headers={'Authorization': 'BadFormat token123'}
     )
     assert res.status_code == 401
-    assert 'Invalid Authorization header format' in res.json()['detail']
+    assert res.json()['detail'] == 'Not authenticated'
 
 
 def test_jwt_auth_public_key_fails(session):

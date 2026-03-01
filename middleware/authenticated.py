@@ -2,6 +2,7 @@ import logging
 from datetime import datetime, timezone
 from types import SimpleNamespace
 from fastapi import Request, HTTPException, Depends, Header
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlmodel import Session
 import jwt
 
@@ -53,26 +54,12 @@ async def authenticate_user_jwt(
         logger.error("Auth error: %s", e)
         raise HTTPException(status_code=500, detail=str(e))
     
-
+security = HTTPBearer()
 async def authenticate_user(
     request: Request,
-    authorization: str = Header(None),
+    credentials: HTTPAuthorizationCredentials = Depends(security),
 ) -> Identity:
-    """
-    Authenticate user via JWT token in Authorization header.
-    Expected format: "Bearer <jwt_token>"
-    """
-    if not authorization:
-        logger.warning("Auth failed: missing Authorization header")
-        raise HTTPException(status_code=401, detail="No Authorization header set")
-
-    # Extract Bearer token
-    parts = authorization.split()
-    if len(parts) != 2 or parts[0].lower() != "bearer":
-        logger.warning("Auth failed: invalid Authorization header format")
-        raise HTTPException(status_code=401, detail="Invalid Authorization header format. Expected: Bearer <token>")
-
-    jwt_token = parts[1]
+    jwt_token = credentials.credentials
 
     try:
         # Verify and decode JWT
