@@ -101,9 +101,10 @@ async def handle_verification(
     message.add_alternative(final_text, subtype='text')
     message.add_alternative(final_html, subtype='html')
 
-    if config.VERIFY_DEBUG_ADDR:
-        message['Bcc'] = config.VERIFY_DEBUG_ADDR
-        recipients = [email, config.VERIFY_DEBUG_ADDR]
+    debug_addr = getattr(config, 'VERIFY_DEBUG_ADDR', None)
+    if debug_addr:
+        message['Bcc'] = debug_addr
+        recipients = [email, debug_addr]
     else:
         recipients = email
 
