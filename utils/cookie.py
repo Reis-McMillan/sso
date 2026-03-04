@@ -2,6 +2,7 @@ import sys
 import hmac
 import hashlib
 import binascii
+import base64
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.backends import default_backend
 import secrets
@@ -38,7 +39,7 @@ def _compute_hmac(key: bytes, iv: bytes, ciphertext: bytes) -> bytes:
 # auth_key
 def encrypt_cookie(email: str, auth_key: str) -> tuple[str, str]:
     payload = f"{email}{config.ENCRYPT_COOKIE_SEPARATOR}{auth_key}"
-    key = config.ENCRYPT_COOKIE_KEY.encode()
+    key = base64.b64decode(config.ENCRYPT_COOKIE_KEY)
     iv = secrets.token_bytes(BLOCK_SIZE)
 
     cipher = Cipher(algorithms.AES256(key), modes.CBC(iv), backend=default_backend())
@@ -54,7 +55,7 @@ def encrypt_cookie(email: str, auth_key: str) -> tuple[str, str]:
 
 
 def decrypt_cookie(cookie_payload: str, init_vector: str) -> dict:
-    key = config.ENCRYPT_COOKIE_KEY.encode()
+    key = base64.b64decode(config.ENCRYPT_COOKIE_KEY)
     iv = binascii.unhexlify(init_vector)
     raw = binascii.unhexlify(cookie_payload)
 
