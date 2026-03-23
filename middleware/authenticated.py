@@ -67,7 +67,8 @@ async def authenticate_user(
         decoded = jwt.decode(
             jwt_token,
             public_key_pem,
-            algorithms=["EdDSA"]
+            algorithms=["EdDSA"],
+            options={"verify_aud": False},
         )
 
         # Extract claims

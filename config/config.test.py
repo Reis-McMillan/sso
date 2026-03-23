@@ -16,6 +16,11 @@ ENCRYPT_COOKIE_KEY = 'YWJjZDEyMzRhYmNkMTIzNGFiY2QxMjM0YWJjZDEyMzQ='
 ENCRYPT_COOKIE_SEPARATOR = '|'
 JWT_EXPIRY = 5 * 60 # 5 minutes
 JWT_PRIVATE_KEY_PATH = os.environ.get('JWT_PRIVATE_KEY_PATH')
+ISSUER = os.environ.get('OIDC_ISSUER', 'http://localhost:8082')
+AUTHORIZATION_CODE_TTL = 60  # seconds
+REFRESH_TOKEN_TTL = 30 * 24 * 60 * 60  # 30 days
+ID_TOKEN_EXPIRY = 5 * 60  # 5 minutes
+SUPPORTED_SCOPES = ['openid', 'profile', 'email']
 LOGGING_ENABLED = False
 OPENOBSERVE_ENDPOINT = os.environ.get('OPENOBSERVE_ENDPOINT')
 _oo_user = os.environ.get('OPENOBSERVE_USER')

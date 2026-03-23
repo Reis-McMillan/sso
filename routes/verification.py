@@ -1,7 +1,9 @@
 # routes/verification.py
 import logging
 from pathlib import Path
+from urllib.parse import urlencode
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from fastapi.responses import RedirectResponse
 from sqlmodel import Session
 from datetime import datetime, timedelta, timezone
 import aiosmtplib
@@ -12,6 +14,7 @@ from pydantic import ValidationError
 from database import get_session
 from models.verification import Verification
 from models.identity import Identity
+from models.oauth2_session import OAuth2Session
 from config import config
 from utils.cookie import encrypt_cookie
 
@@ -25,6 +28,7 @@ router = APIRouter(prefix="/verification", tags=["Verification"])
 async def verify_code(
     email: str = Query(...),
     code: str = Query(...),
+    oauth2_session: str | None = Query(None),
     session: Session = Depends(get_session)
 ):
     try:
@@ -49,16 +53,54 @@ async def verify_code(
         else:
             r = Identity.new(session, email, new_key, expiry_dt)
 
+    # Update last_auth_time
+    r.last_auth_time = datetime.now(timezone.utc)
+    session.add(r)
+    session.commit()
+    session.refresh(r)
+
     logger.info("Verification successful: %s (identity %s)", email, "updated" if r else "created")
     value, iv = encrypt_cookie(r.email, r.auth_key)
     max_age = int(config.AUTHENTICATION_TTL)
     cookie_opts = {
         "httponly": True,
         "secure": True,
-        "samesite": "strict",
+        "samesite": "lax",
         "max_age": max_age,
         "path": "/",
     }
+
+    # If this verification was part of an OAuth2 flow, redirect back to /authorize
+    if oauth2_session:
+        oauth2_sess = OAuth2Session.get_by_session_id(session, oauth2_session)
+        if oauth2_sess and not oauth2_sess.is_expired():
+            params = {
+                "response_type": oauth2_sess.response_type,
+                "client_id": oauth2_sess.client_id,
+                "redirect_uri": oauth2_sess.redirect_uri,
+                "scope": oauth2_sess.scope,
+            }
+            if oauth2_sess.state:
+                params["state"] = oauth2_sess.state
+            if oauth2_sess.nonce:
+                params["nonce"] = oauth2_sess.nonce
+            if oauth2_sess.code_challenge:
+                params["code_challenge"] = oauth2_sess.code_challenge
+            if oauth2_sess.code_challenge_method:
+                params["code_challenge_method"] = oauth2_sess.code_challenge_method
+
+            # Clean up the session
+            session.delete(oauth2_sess)
+            session.commit()
+
+            response = RedirectResponse(
+                url=f"/authorize?{urlencode(params)}", status_code=302
+            )
+            response.set_cookie(key=config.ENCRYPT_COOKIE_NAME, value=value, **cookie_opts)
+            response.set_cookie(key=f"{config.ENCRYPT_COOKIE_NAME}_iv", value=iv, **cookie_opts)
+            logger.info("OAuth2 flow: redirecting %s back to /authorize", r.email)
+            return response
+
     response = Response(status_code=200)
     response.set_cookie(key=config.ENCRYPT_COOKIE_NAME, value=value, **cookie_opts)
     response.set_cookie(key=f"{config.ENCRYPT_COOKIE_NAME}_iv", value=iv, **cookie_opts)

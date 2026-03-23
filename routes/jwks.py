@@ -2,7 +2,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 import base64
 
-from utils.jwt import _get_private_key
+from utils.jwt import _get_private_key, _get_kid
 
 router = APIRouter(tags=["JWKS"])
 
@@ -17,5 +17,6 @@ async def jwks():
         "x": base64.urlsafe_b64encode(raw).rstrip(b"=").decode(),
         "use": "sig",
         "alg": "EdDSA",
+        "kid": _get_kid(),
     }
     return JSONResponse({"keys": [jwk]})

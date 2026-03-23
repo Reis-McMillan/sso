@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sign In</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f5f5f5; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
+        .card { background: white; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); padding: 2rem; max-width: 400px; width: 90%; }
+        h1 { font-size: 1.5rem; margin-bottom: 0.5rem; }
+        .subtitle { color: #666; margin-bottom: 1.5rem; font-size: 0.9rem; }
+        label { display: block; font-weight: 500; margin-bottom: 0.3rem; font-size: 0.9rem; }
+        input[type="email"], input[type="text"] { width: 100%; padding: 0.6rem; border: 1px solid #ddd; border-radius: 4px; font-size: 1rem; margin-bottom: 1rem; }
+        button { width: 100%; padding: 0.7rem; background: #2563eb; color: white; border: none; border-radius: 4px; font-size: 1rem; cursor: pointer; }
+        button:hover { background: #1d4ed8; }
+        .step { display: none; }
+        .step.active { display: block; }
+        .error { color: #dc2626; font-size: 0.85rem; margin-bottom: 0.5rem; display: none; }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h1>Sign In</h1>
+        <p class="subtitle">{{ client_name }} is requesting access to your account.</p>
+
+        <div id="step-email" class="step active">
+            <form id="email-form">
+                <label for="email">Email address</label>
+                <input type="email" id="email" name="email" required autofocus>
+                <div id="email-error" class="error"></div>
+                <button type="submit">Send verification code</button>
+            </form>
+        </div>
+
+        <div id="step-code" class="step">
+            <p style="margin-bottom: 1rem; font-size: 0.9rem;">A verification code has been sent to <strong id="sent-email"></strong>.</p>
+            <form id="code-form">
+                <label for="code">Verification code</label>
+                <input type="text" id="code" name="code" required pattern="[0-9]{6}" maxlength="6" inputmode="numeric" autofocus>
+                <div id="code-error" class="error"></div>
+                <button type="submit">Verify</button>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        const sessionId = "{{ oauth2_session_id }}";
+
+        document.getElementById("email-form").addEventListener("submit", async (e) => {
+            e.preventDefault();
+            const email = document.getElementById("email").value;
+            const errorEl = document.getElementById("email-error");
+            errorEl.style.display = "none";
+
+            try {
+                const resp = await fetch(`/verification/?email=${encodeURIComponent(email)}`, { method: "POST" });
+                if (!resp.ok) {
+                    errorEl.textContent = "Failed to send verification code.";
+                    errorEl.style.display = "block";
+                    return;
+                }
+                document.getElementById("sent-email").textContent = email;
+                document.getElementById("step-email").classList.remove("active");
+                document.getElementById("step-code").classList.add("active");
+            } catch (err) {
+                errorEl.textContent = "An error occurred.";
+                errorEl.style.display = "block";
+            }
+        });
+
+        document.getElementById("code-form").addEventListener("submit", async (e) => {
+            e.preventDefault();
+            const email = document.getElementById("email").value;
+            const code = document.getElementById("code").value;
+            const errorEl = document.getElementById("code-error");
+            errorEl.style.display = "none";
+
+            try {
+                const resp = await fetch(
+                    `/verification/?email=${encodeURIComponent(email)}&code=${encodeURIComponent(code)}&oauth2_session=${encodeURIComponent(sessionId)}`,
+                    { method: "GET", redirect: "follow" }
+                );
+                if (resp.redirected) {
+                    window.location.href = resp.url;
+                    return;
+                }
+                if (!resp.ok) {
+                    errorEl.textContent = "Invalid or expired code.";
+                    errorEl.style.display = "block";
+                    return;
+                }
+                // If we get a 200 with no redirect, the session will handle it
+                window.location.href = resp.url || window.location.href;
+            } catch (err) {
+                errorEl.textContent = "An error occurred.";
+                errorEl.style.display = "block";
+            }
+        });
+    </script>
+</body>
+</html>

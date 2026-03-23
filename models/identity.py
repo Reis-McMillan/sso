@@ -26,6 +26,10 @@ class Identity(SQLModel, table=True):
         sa_column=Column(DateTime(timezone=True))
     )
     closed: bool = Field(default=False)
+    last_auth_time: datetime | None = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True)),
+    )
     roles: List[Role] = Field(
         default_factory=lambda: [Role.DEFAULT],
         sa_column=Column(ARRAY(String))
