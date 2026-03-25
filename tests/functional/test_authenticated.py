@@ -18,37 +18,36 @@ from utils.jwt import create_signed_jwt, _get_private_key
 
 def test_cookie_auth_success(session, client, admin_creds):
     token, iv = admin_creds
-    res = client.get(
-        '/jwt/',
-        headers={'X-Auth-Token': token, 'X-Init-Vector': iv}
-    )
+    client.cookies.set('token', token)
+    client.cookies.set('token_iv', iv)
+    res = client.get('/jwt/')
     assert res.status_code == 200
     assert 'token' in res.json()
-    assert res.cookies.get('jwt') is not None
+    assert res.cookies.get('jwt') is None
+    client.cookies.clear()
 
 
 def test_cookie_auth_no_auth_token(client):
     res = client.get('/jwt/')
     assert res.status_code == 401
-    assert res.json()['detail'] == 'No Auth header set'
+    assert res.json()['detail'] == 'Missing auth token'
 
 
 def test_cookie_auth_no_init_vector(client, admin_creds):
     token, _ = admin_creds
-    res = client.get(
-        '/jwt/',
-        headers={'X-Auth-Token': token}
-    )
+    client.cookies.set('token', token)
+    res = client.get('/jwt/')
     assert res.status_code == 401
-    assert res.json()['detail'] == 'No Init Vector header set'
+    assert res.json()['detail'] == 'Missing init vector'
+    client.cookies.clear()
 
 
 def test_cookie_auth_decrypt_fails(client):
-    res = client.get(
-        '/jwt/',
-        headers={'X-Auth-Token': 'badhex', 'X-Init-Vector': 'badhex'}
-    )
+    client.cookies.set('token', 'badhex')
+    client.cookies.set('token_iv', 'badhex')
+    res = client.get('/jwt/')
     assert res.status_code == 401
+    client.cookies.clear()
 
 
 def test_cookie_auth_database_error(client, admin_creds):
@@ -57,33 +56,33 @@ def test_cookie_auth_database_error(client, admin_creds):
     app.dependency_overrides[get_session] = lambda: mock_session
 
     token, iv = admin_creds
-    res = client.get(
-        '/jwt/',
-        headers={'X-Auth-Token': token, 'X-Init-Vector': iv}
-    )
+    client.cookies.set('token', token)
+    client.cookies.set('token_iv', iv)
+    res = client.get('/jwt/')
     assert res.status_code == 500
 
+    client.cookies.clear()
     app.dependency_overrides.clear()
 
 
 def test_cookie_auth_identity_not_found(session, client):
     token, iv = encrypt_cookie('nonexistent@example.com', 'somekey')
-    res = client.get(
-        '/jwt/',
-        headers={'X-Auth-Token': token, 'X-Init-Vector': iv}
-    )
+    client.cookies.set('token', token)
+    client.cookies.set('token_iv', iv)
+    res = client.get('/jwt/')
     assert res.status_code == 401
     assert res.json()['detail'] == 'No valid authentication token found'
+    client.cookies.clear()
 
 
 def test_cookie_auth_key_mismatch(session, client):
     token, iv = encrypt_cookie('admin@mcmlln.dev', 'wrong_key')
-    res = client.get(
-        '/jwt/',
-        headers={'X-Auth-Token': token, 'X-Init-Vector': iv}
-    )
+    client.cookies.set('token', token)
+    client.cookies.set('token_iv', iv)
+    res = client.get('/jwt/')
     assert res.status_code == 401
     assert res.json()['detail'] == 'No valid authentication token found'
+    client.cookies.clear()
 
 
 def test_cookie_auth_identity_expired(session, client):
@@ -94,12 +93,12 @@ def test_cookie_auth_identity_expired(session, client):
         datetime.now(timezone.utc) - timedelta(days=1)
     )
     token, iv = encrypt_cookie('expired@test.com', 'testkey')
-    res = client.get(
-        '/jwt/',
-        headers={'X-Auth-Token': token, 'X-Init-Vector': iv}
-    )
+    client.cookies.set('token', token)
+    client.cookies.set('token_iv', iv)
+    res = client.get('/jwt/')
     assert res.status_code == 401
     assert res.json()['detail'] == 'No valid authentication token found'
+    client.cookies.clear()
 
 
 # ──────────────────────────────────────────────

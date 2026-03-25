@@ -9,14 +9,14 @@ SMTP_ENDPOINT = 'smtp.email.us-chicago-1.oci.oraclecloud.com'
 SMTP_PORT = 587
 VERIFY_DELTA = 5 * 60 # 5 minutes
 AUTHENTICATION_TTL = 60 * 24 * 60 * 60 # 60 days
-VERIFY_BASE_URL = os.environ.get('VERIFY_BASE_URL', 'http://localhost:8081')
+VERIFY_BASE_URL = os.environ.get('VERIFY_BASE_URL', 'http://localhost:8080')
 VERIFY_DEBUG_ADDR = 'reismcmillan19@gmail.com'
 ENCRYPT_COOKIE_NAME = 'token'
 ENCRYPT_COOKIE_KEY = 'YWJjZDEyMzRhYmNkMTIzNGFiY2QxMjM0YWJjZDEyMzQ='
 ENCRYPT_COOKIE_SEPARATOR = '|'
 JWT_EXPIRY = 5 * 60 # 5 minutes
-JWT_PRIVATE_KEY_PATH = os.environ.get('JWT_PRIVATE_KEY_PATH')
-ISSUER = os.environ.get('OIDC_ISSUER', 'http://localhost:8082')
+JWT_PRIVATE_KEY = os.environ.get('JWT_PRIVATE_KEY')
+ISSUER = os.environ.get('OIDC_ISSUER', 'http://localhost:8080')
 AUTHORIZATION_CODE_TTL = 60  # seconds
 REFRESH_TOKEN_TTL = 30 * 24 * 60 * 60  # 30 days
 ID_TOKEN_EXPIRY = 5 * 60  # 5 minutes

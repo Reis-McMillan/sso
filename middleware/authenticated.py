@@ -15,20 +15,22 @@ logger = logging.getLogger("sso.auth")
 
 async def authenticate_user_jwt(
     request: Request,
-    x_auth_token: str = Header(None),
-    x_init_vector: str = Header(None),
     session: Session = Depends(get_session)
 ) -> Identity:
-    if not x_auth_token:
-        logger.warning("Auth failed: missing auth token header")
-        raise HTTPException(status_code=401, detail="No Auth header set")
+    
+    auth_token = request.cookies.get('token', None)
+    init_vector = request.cookies.get('token_iv', None)
+    
+    if not auth_token:
+        logger.warning("Auth failed: missing auth token")
+        raise HTTPException(status_code=401, detail="Missing auth token")
 
-    if not x_init_vector:
-        logger.warning("Auth failed: missing init vector header")
-        raise HTTPException(status_code=401, detail="No Init Vector header set")
+    if not init_vector:
+        logger.warning("Auth failed: missing init vector")
+        raise HTTPException(status_code=401, detail="Missing init vector")
 
     try:
-        decrypted = decrypt_cookie(x_auth_token, x_init_vector)
+        decrypted = decrypt_cookie(auth_token, init_vector)
     except Exception as e:
         logger.warning("Auth failed: cookie decryption error - %s", e)
         raise HTTPException(status_code=401, detail=str(e))

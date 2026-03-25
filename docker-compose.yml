@@ -13,23 +13,24 @@ services:
       - pgdata:/var/lib/postgresql/data
 
   sso:
-    build: .
+    build:
+      context: .
+      args:
+        ENV: dev
     container_name: sso-backend
     restart: unless-stopped
     ports:
-      - "8082:8080"
+      - "8080:8080"
     depends_on:
       - postgres
     environment:
       DATABASE_URL: postgresql://sso:sso@postgres:5432/sso
       USERNAME_SMTP: ${USERNAME_SMTP}
       PASSWORD_SMTP: ${PASSWORD_SMTP}
-      JWT_PRIVATE_KEY_PATH: /secrets/jwt/private-key.pem
+      JWT_PRIVATE_KEY: ${JWT_PRIVATE_KEY}
       OPENOBSERVE_ENDPOINT: ${OPENOBSERVE_ENDPOINT}
       OPENOBSERVE_USER: ${OPENOBSERVE_USER}
       OPENOBSERVE_TOKEN: ${OPENOBSERVE_TOKEN}
-    volumes:
-      - ${JWT_PRIVATE_KEY_PATH}:/secrets/jwt/private-key.pem:ro
 
 volumes:
   pgdata:

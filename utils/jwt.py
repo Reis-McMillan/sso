@@ -15,8 +15,12 @@ _kid = None
 def _get_private_key():
     global _private_key
     if _private_key is None:
-        with open(config.JWT_PRIVATE_KEY_PATH, "rb") as f:
-            _private_key = load_pem_private_key(f.read(), password=None)
+        jwt_private_key = getattr(config, 'JWT_PRIVATE_KEY', None)
+        if jwt_private_key:
+            pem_bytes = jwt_private_key.encode('utf-8')
+            _private_key = load_pem_private_key(pem_bytes, password=None)
+        else:
+            raise ValueError('JWT_PRIVATE_KEY is not set.')
     return _private_key
 
 

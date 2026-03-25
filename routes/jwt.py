@@ -26,14 +26,4 @@ async def get_jwt(
         raise HTTPException(status_code=404, detail="Identity not found")   
 
     token = create_signed_jwt(r.email, r.roles)
-    response = JSONResponse(content={"token": token})
-    response.set_cookie(
-        key="jwt",
-        value=token,
-        max_age=config.JWT_EXPIRY,
-        httponly=True,
-        secure=True,
-        samesite="strict",
-        path="/",
-    )
-    return response
+    return JSONResponse(content={"token": token})

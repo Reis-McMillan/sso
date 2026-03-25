@@ -21,8 +21,9 @@ WORKDIR /home/appuser/app
 
 COPY --from=builder /install /usr/local
 
-COPY --chown=appuser:appuser . .
-RUN cp config/config.prod.py config/config.py
+ARG ENV=prod
+COPY --chown=appuser:appgroup . .
+RUN cp config/config.${ENV}.py config/config.py
 
 EXPOSE 8080
 
