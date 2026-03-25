@@ -19,7 +19,8 @@ from sqlmodel import SQLModel
 config = context.config
 
 # Override sqlalchemy.url from app config
-config.set_main_option("sqlalchemy.url", app_config.DATABASE_URL)
+# Escape '%' as '%%' for configparser interpolation
+config.set_main_option("sqlalchemy.url", app_config.DATABASE_URL.replace("%", "%%"))
 
 # Interpret the config file for Python logging.
 if config.config_file_name is not None:
