@@ -74,6 +74,7 @@ async def authorize(
     code_challenge: str | None = Query(None),
     code_challenge_method: str | None = Query(None),
     prompt: str | None = Query(None),
+    max_age: int | None = Query(None),
     request_obj: str | None = Query(None, alias="request"),
     request_uri: str | None = Query(None),
     session: Session = Depends(get_session),
@@ -150,6 +151,14 @@ async def authorize(
         identity = None
     else:
         identity = _get_authenticated_identity(request, session)
+
+    # max_age: if the user's last authentication is older than max_age seconds,
+    # force re-authentication (treat as if not authenticated)
+    if identity and max_age is not None:
+        auth_time = identity.last_auth_time or datetime.min.replace(tzinfo=timezone.utc)
+        elapsed = (datetime.now(timezone.utc) - auth_time).total_seconds()
+        if elapsed > max_age:
+            identity = None
 
     if not identity:
         if "none" in prompt_values:
