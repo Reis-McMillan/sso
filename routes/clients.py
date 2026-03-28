@@ -7,6 +7,7 @@ from sqlmodel import Session
 
 from database import get_session
 from models.oauth2_client import OAuthClient
+from models.scope import Scope
 from utils.client_auth import hash_client_secret
 
 logger = logging.getLogger("sso.clients")
@@ -40,6 +41,11 @@ async def create_client(
 ):
     if "admin" not in request.state.auth_cache.roles:
         raise HTTPException(status_code=403, detail="Admin access required")
+
+    # Validate scopes exist in the database
+    for s in body.allowed_scopes:
+        if not Scope.get_by_name(session, s):
+            raise HTTPException(status_code=400, detail=f"Unknown scope '{s}'")
 
     # Generate client credentials
     plain_secret = secrets.token_urlsafe(48) if not body.is_public else None
@@ -141,6 +147,9 @@ async def update_client(
     if body.redirect_uris is not None:
         client.redirect_uris = body.redirect_uris
     if body.allowed_scopes is not None:
+        for s in body.allowed_scopes:
+            if not Scope.get_by_name(session, s):
+                raise HTTPException(status_code=400, detail=f"Unknown scope '{s}'")
         client.allowed_scopes = body.allowed_scopes
     if body.grant_types is not None:
         client.grant_types = body.grant_types

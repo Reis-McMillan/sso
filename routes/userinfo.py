@@ -11,16 +11,25 @@ logger = logging.getLogger("sso.userinfo")
 
 router = APIRouter(tags=["UserInfo"])
 
-security = HTTPBearer()
+security = HTTPBearer(auto_error=False)
 
 
 @router.get("/userinfo")
 @router.post("/userinfo")
 async def userinfo(
     request: Request,
-    credentials: HTTPAuthorizationCredentials = Depends(security),
+    credentials: HTTPAuthorizationCredentials | None = Depends(security),
 ):
-    token = credentials.credentials
+    # Accept token from Authorization header or POST body (access_token field)
+    token = None
+    if credentials:
+        token = credentials.credentials
+    elif request.method == "POST":
+        form = await request.form()
+        token = form.get("access_token")
+
+    if not token:
+        raise HTTPException(status_code=401, detail="Missing access token")
 
     try:
         public_key_pem = get_public_key_pem()

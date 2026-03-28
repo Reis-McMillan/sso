@@ -26,16 +26,11 @@
         <p><span class="client-name">{{ client_name }}</span> is requesting access to your account with the following permissions:</p>
 
         <ul class="scopes">
-            {% for scope in scopes %}
+            {% for detail in scope_details %}
             <li>
-                {% if scope == "openid" %}
-                Verify your identity
-                {% elif scope == "email" %}
-                View your email address
-                {% elif scope == "profile" %}
-                View your profile information
-                {% else %}
-                {{ scope }}
+                {{ detail.description }}
+                {% if detail.provider_id %}
+                <span style="color: #6b7280; font-size: 0.85rem;">(via {{ detail.provider_id }})</span>
                 {% endif %}
             </li>
             {% endfor %}

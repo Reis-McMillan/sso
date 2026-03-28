@@ -5,6 +5,10 @@ from .authorization_code import AuthorizationCode
 from .refresh_token import RefreshToken
 from .consent import Consent
 from .oauth2_session import OAuth2Session
+from .scope import Scope
+from .external_provider import ExternalProvider
+from .external_token import ExternalToken
+from .federation_session import FederationSession
 
 __all__ = [
     'Identity',
@@ -14,4 +18,8 @@ __all__ = [
     'RefreshToken',
     'Consent',
     'OAuth2Session',
+    'Scope',
+    'ExternalProvider',
+    'ExternalToken',
+    'FederationSession',
 ]

@@ -1,13 +1,17 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
+from sqlmodel import Session
 
 from config import config
+from database import get_session
+from models.scope import Scope
 
 router = APIRouter(tags=["Discovery"])
 
 
 @router.get("/.well-known/openid-configuration")
-async def openid_configuration():
+async def openid_configuration(session: Session = Depends(get_session)):
+    scopes_supported = Scope.get_names(session)
     return JSONResponse({
         "issuer": config.ISSUER,
         "authorization_endpoint": f"{config.ISSUER}/authorize",
@@ -16,7 +20,7 @@ async def openid_configuration():
         "jwks_uri": f"{config.ISSUER}/.well-known/jwks.json",
         "end_session_endpoint": f"{config.ISSUER}/end-session",
         "revocation_endpoint": f"{config.ISSUER}/token/revoke",
-        "scopes_supported": config.SUPPORTED_SCOPES,
+        "scopes_supported": scopes_supported,
         "response_types_supported": ["code"],
         "grant_types_supported": ["authorization_code", "refresh_token"],
         "subject_types_supported": ["public"],

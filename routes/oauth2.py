@@ -12,10 +12,12 @@ from config import config
 from database import get_session
 from models.authorization_code import AuthorizationCode
 from models.consent import Consent
+from models.external_token import ExternalToken
 from models.identity import Identity
 from models.oauth2_client import OAuthClient
 from models.oauth2_session import OAuth2Session
 from models.refresh_token import RefreshToken
+from models.scope import Scope
 from utils.client_auth import authenticate_client
 from utils.cookie import decrypt_cookie
 from utils.jwt import create_id_token, create_signed_jwt
@@ -62,7 +64,60 @@ def _build_error_redirect(redirect_uri: str, error: str, description: str, state
     )
 
 
+def _find_missing_federation_provider(
+    session: "Session", identity_email: str, federation_scopes: dict[str, list[str]]
+) -> str | None:
+    """Check if user has valid external tokens for all federation providers.
+
+    Returns the first provider_id that is missing a token, or None if all are present.
+    """
+    for provider_id, scope_names in federation_scopes.items():
+        ext_token = ExternalToken.get(session, identity_email, provider_id)
+        if not ext_token or ext_token.is_expired():
+            return provider_id
+    return None
+
+
+def _redirect_to_federation(
+    session: "Session",
+    provider_id: str,
+    scope_names: list[str],
+    client_id: str,
+    redirect_uri: str,
+    response_type: str,
+    scope: str,
+    state: str | None,
+    nonce: str | None,
+    code_challenge: str | None,
+    code_challenge_method: str | None,
+) -> RedirectResponse:
+    """Store OAuth2 session and redirect to federation initiate."""
+    oauth2_session = OAuth2Session(
+        client_id=client_id,
+        redirect_uri=redirect_uri,
+        response_type=response_type,
+        scope=scope,
+        state=state,
+        nonce=nonce,
+        code_challenge=code_challenge,
+        code_challenge_method=code_challenge_method,
+    )
+    session.add(oauth2_session)
+    session.commit()
+    session.refresh(oauth2_session)
+
+    params = {
+        "provider_id": provider_id,
+        "scope_names": " ".join(scope_names),
+        "oauth2_session_id": oauth2_session.session_id,
+    }
+    return RedirectResponse(
+        url=f"/federation/initiate?{urlencode(params)}", status_code=302
+    )
+
+
 @router.get("/authorize")
+@router.post("/authorize")
 async def authorize(
     request: Request,
     response_type: str = Query(...),
@@ -120,6 +175,18 @@ async def authorize(
                 redirect_uri, "invalid_scope",
                 f"Scope '{s}' is not allowed for this client", state
             )
+
+    # Validate scopes exist in the database and partition into OIDC vs federation
+    federation_scopes = {}  # provider_id -> [scope_name, ...]
+    for s in requested_scopes:
+        scope_record = Scope.get_by_name(session, s)
+        if not scope_record:
+            return _build_error_redirect(
+                redirect_uri, "invalid_scope",
+                f"Unknown scope '{s}'", state
+            )
+        if scope_record.provider_id:
+            federation_scopes.setdefault(scope_record.provider_id, []).append(s)
 
     # Validate PKCE
     if code_challenge and code_challenge_method != "S256":
@@ -194,7 +261,18 @@ async def authorize(
 
     # prompt=consent forces the consent screen even if already granted
     if has_consent and "consent" not in prompt_values:
-        # Consent already granted, issue code
+        # Check if federation scopes need external tokens before issuing code
+        missing_provider = _find_missing_federation_provider(
+            session, identity.email, federation_scopes
+        )
+        if missing_provider:
+            return _redirect_to_federation(
+                session, missing_provider, federation_scopes[missing_provider],
+                client_id, redirect_uri, response_type, scope, state, nonce,
+                code_challenge, code_challenge_method,
+            )
+
+        # Consent already granted and all external tokens present, issue code
         return _issue_authorization_code(
             session, identity, client, redirect_uri,
             requested_scopes, state, nonce,
@@ -224,10 +302,24 @@ async def authorize(
     session.commit()
     session.refresh(oauth2_session)
 
+    # Build scope details for the consent template
+    scope_details = []
+    for s in requested_scopes:
+        scope_record = Scope.get_by_name(session, s)
+        if scope_record:
+            scope_details.append({
+                "name": s,
+                "description": scope_record.description,
+                "provider_id": scope_record.provider_id,
+            })
+        else:
+            scope_details.append({"name": s, "description": s, "provider_id": None})
+
     return templates.TemplateResponse("consent.html", {
         "request": request,
         "client_name": client.client_name,
         "scopes": requested_scopes,
+        "scope_details": scope_details,
         "oauth2_session_id": oauth2_session.session_id,
         "csrf_token": csrf_token,
     })
@@ -271,6 +363,26 @@ async def authorize_consent(
 
     # Store consent
     Consent.grant(session, identity.email, client.client_id, requested_scopes)
+
+    # Check if federation scopes need external tokens
+    federation_scopes = {}
+    for s in requested_scopes:
+        scope_record = Scope.get_by_name(session, s)
+        if scope_record and scope_record.provider_id:
+            federation_scopes.setdefault(scope_record.provider_id, []).append(s)
+
+    missing_provider = _find_missing_federation_provider(
+        session, identity.email, federation_scopes
+    )
+    if missing_provider:
+        # Keep the session alive for the federation callback to resume
+        return _redirect_to_federation(
+            session, missing_provider, federation_scopes[missing_provider],
+            oauth2_session.client_id, redirect_uri,
+            oauth2_session.response_type, oauth2_session.scope, state,
+            oauth2_session.nonce, oauth2_session.code_challenge,
+            oauth2_session.code_challenge_method,
+        )
 
     # Clean up session
     nonce = oauth2_session.nonce
@@ -385,8 +497,11 @@ async def _handle_authorization_code_grant(
 
     # Validate
     if auth_code.used:
-        # Potential replay attack — revoke all tokens for this authorization
+        # Potential replay attack — revoke all tokens for this authorization (RFC 6749 §4.1.2)
         logger.warning("Authorization code replay detected: %s", code)
+        RefreshToken.revoke_all_for_user_client(
+            session, auth_code.identity_email, auth_code.client_id
+        )
         return JSONResponse(
             status_code=400,
             content={"error": "invalid_grant", "error_description": "Authorization code has already been used"},
