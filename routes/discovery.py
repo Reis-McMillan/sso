@@ -40,4 +40,6 @@ async def openid_configuration():
             "roles",
         ],
         "code_challenge_methods_supported": ["S256"],
+        "request_parameter_supported": False,
+        "request_uri_parameter_supported": False,
     })

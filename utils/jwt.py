@@ -50,7 +50,7 @@ def get_public_key_pem() -> str:
 
 def _compute_at_hash(access_token: str) -> str:
     """Compute at_hash: left half of SHA-256 of the access token, base64url-encoded."""
-    digest = hashlib.sha256(access_token.encode("ascii")).digest()
+    digest = hashlib.sha512(access_token.encode("ascii")).digest()
     left_half = digest[: len(digest) // 2]
     return base64.urlsafe_b64encode(left_half).rstrip(b"=").decode()
 
