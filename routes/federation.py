@@ -3,38 +3,24 @@ from datetime import datetime, timedelta, timezone
 from urllib.parse import urlencode
 
 import httpx
-import jwt as pyjwt
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, RedirectResponse
 from sqlmodel import Session
 
 from config import config
 from database import get_session
+from middleware.authenticated import authenticate_user
 from models.external_provider import ExternalProvider
 from models.external_token import ExternalToken
 from models.federation_session import FederationSession
 from models.oauth2_session import OAuth2Session
 from models.scope import Scope
-from utils.cookie import decrypt_cookie
+from utils.browser_auth import get_browser_identity
 from utils.encryption import encrypt_field
-from utils.jwt import get_public_key_pem
 
 logger = logging.getLogger("sso.federation")
 
 router = APIRouter(prefix="/federation", tags=["Federation"])
-
-
-def _get_authenticated_identity_email(request: Request) -> str | None:
-    """Extract authenticated user email from cookies."""
-    token = request.cookies.get(config.ENCRYPT_COOKIE_NAME)
-    token_iv = request.cookies.get(f"{config.ENCRYPT_COOKIE_NAME}_iv")
-    if not token or not token_iv:
-        return None
-    try:
-        decrypted = decrypt_cookie(token, token_iv)
-        return decrypted["email"]
-    except Exception:
-        return None
 
 
 @router.get("/initiate")
@@ -46,9 +32,10 @@ async def initiate_federation(
     session: Session = Depends(get_session),
 ):
     """Start upstream OAuth2 flow with an external provider."""
-    identity_email = _get_authenticated_identity_email(request)
-    if not identity_email:
+    identity = get_browser_identity(request, session)
+    if not identity:
         raise HTTPException(status_code=401, detail="Not authenticated")
+    identity_email = identity.email
 
     provider = ExternalProvider.get_by_provider_id(session, provider_id)
     if not provider or not provider.enabled:
@@ -205,7 +192,7 @@ async def federation_callback(
     return JSONResponse({"detail": "Federation complete", "provider": provider_id})
 
 
-@router.get("/tokens")
+@router.get("/tokens", dependencies=[Depends(authenticate_user)])
 async def get_external_tokens(
     request: Request,
     provider_id: str = Query(...),
@@ -216,26 +203,7 @@ async def get_external_tokens(
     Requires a valid Bearer JWT. Returns only the access token, never the refresh token.
     Automatically refreshes expired tokens if a refresh token is available.
     """
-    # Extract user from Bearer JWT
-    auth_header = request.headers.get("Authorization", "")
-    if not auth_header.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Bearer token required")
-
-    token_str = auth_header[7:]
-    try:
-        public_key_pem = get_public_key_pem()
-        decoded = pyjwt.decode(
-            token_str,
-            public_key_pem,
-            algorithms=["EdDSA"],
-            options={"verify_aud": False},
-        )
-    except pyjwt.InvalidTokenError:
-        raise HTTPException(status_code=401, detail="Invalid token")
-
-    identity_email = decoded.get("sub")
-    if not identity_email:
-        raise HTTPException(status_code=401, detail="Invalid token: missing subject")
+    identity_email = request.state.identity.email
 
     # Look up external token
     ext_token = ExternalToken.get(session, identity_email, provider_id)

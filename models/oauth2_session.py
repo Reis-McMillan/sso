@@ -25,6 +25,7 @@ class OAuth2Session(SQLModel, table=True):
     nonce: Optional[str] = Field(default=None)
     code_challenge: Optional[str] = Field(default=None)
     code_challenge_method: Optional[str] = Field(default=None)
+    csrf_token: Optional[str] = Field(default=None)
     created_at: datetime = Field(
         default_factory=lambda: datetime.now(timezone.utc),
         sa_column=Column(DateTime(timezone=True)),

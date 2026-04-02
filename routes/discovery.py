@@ -22,7 +22,7 @@ async def openid_configuration(session: Session = Depends(get_session)):
         "revocation_endpoint": f"{config.ISSUER}/token/revoke",
         "scopes_supported": scopes_supported,
         "response_types_supported": ["code"],
-        "grant_types_supported": ["authorization_code", "refresh_token"],
+        "grant_types_supported": ["authorization_code", "refresh_token", "urn:ietf:params:oauth:grant-type:token-exchange"],
         "subject_types_supported": ["public"],
         "id_token_signing_alg_values_supported": ["EdDSA"],
         "token_endpoint_auth_methods_supported": [

@@ -55,12 +55,12 @@ def _compute_at_hash(access_token: str) -> str:
     return base64.urlsafe_b64encode(left_half).rstrip(b"=").decode()
 
 
-def create_signed_jwt(email: str, roles: list[str]) -> str:
+def create_signed_jwt(email: str, roles: list[str], audience: str = None) -> str:
     now = datetime.now(timezone.utc)
     payload = {
         "iss": config.ISSUER,
         "sub": email,
-        "aud": config.ISSUER,
+        "aud": config.ISSUER if not audience else audience,
         "roles": roles,
         "iat": now,
         "exp": now + timedelta(seconds=config.JWT_EXPIRY),

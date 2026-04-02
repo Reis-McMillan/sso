@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlmodel import Session
+import jwt
 
 from config import config
 from database import get_session
@@ -18,9 +19,9 @@ from models.oauth2_client import OAuthClient
 from models.oauth2_session import OAuth2Session
 from models.refresh_token import RefreshToken
 from models.scope import Scope
+from utils.browser_auth import get_browser_identity
 from utils.client_auth import authenticate_client
-from utils.cookie import decrypt_cookie
-from utils.jwt import create_id_token, create_signed_jwt
+from utils.jwt import create_id_token, create_signed_jwt, get_public_key_pem
 from utils.pkce import verify_code_challenge
 
 logger = logging.getLogger("sso.oauth2")
@@ -34,25 +35,7 @@ def _get_authenticated_identity(
     request: Request, session: Session
 ) -> Identity | None:
     """Try to authenticate user from cookies (browser flow)."""
-    token = request.cookies.get(config.ENCRYPT_COOKIE_NAME)
-    token_iv = request.cookies.get(f"{config.ENCRYPT_COOKIE_NAME}_iv")
-    if not token or not token_iv:
-        return None
-
-    try:
-        decrypted = decrypt_cookie(token, token_iv)
-    except Exception:
-        return None
-
-    identity = Identity.get(session, decrypted["email"])
-    if (
-        not identity
-        or identity.auth_key != decrypted["auth_key"]
-        or datetime.now(timezone.utc) > identity.expires
-    ):
-        return None
-
-    return identity
+    return get_browser_identity(request, session)
 
 
 def _build_error_redirect(redirect_uri: str, error: str, description: str, state: str | None = None):
@@ -297,6 +280,7 @@ async def authorize(
         nonce=nonce,
         code_challenge=code_challenge,
         code_challenge_method=code_challenge_method,
+        csrf_token=csrf_token,
     )
     session.add(oauth2_session)
     session.commit()
@@ -330,12 +314,19 @@ async def authorize_consent(
     request: Request,
     oauth2_session_id: str = Form(...),
     consent_action: str = Form(...),
+    csrf_token: str = Form(...),
     session: Session = Depends(get_session),
 ):
     # Look up session
     oauth2_session = OAuth2Session.get_by_session_id(session, oauth2_session_id)
     if not oauth2_session or oauth2_session.is_expired():
         raise HTTPException(status_code=400, detail="Invalid or expired session")
+
+    # Verify CSRF token
+    if not oauth2_session.csrf_token or not secrets.compare_digest(
+        csrf_token, oauth2_session.csrf_token
+    ):
+        raise HTTPException(status_code=403, detail="Invalid CSRF token")
 
     # Verify user is authenticated
     identity = _get_authenticated_identity(request, session)
@@ -451,6 +442,9 @@ async def token_endpoint(
     client_secret: str | None = Form(None),
     code_verifier: str | None = Form(None),
     refresh_token: str | None = Form(None),
+    subject_token: str | None = Form(None),
+    subject_token_type: str | None = Form(None),
+    audience: str | None = Form(None),
     session: Session = Depends(get_session),
 ):
     # Authenticate client
@@ -468,10 +462,14 @@ async def token_endpoint(
         )
     elif grant_type == "refresh_token":
         return await _handle_refresh_token_grant(session, client, refresh_token)
+    elif grant_type == "urn:ietf:params:oauth:grant-type:token-exchange":
+        return await _handle_token_exchange_grant(
+            session, client, subject_token, subject_token_type, audience
+        )
     else:
         return JSONResponse(
             status_code=400,
-            content={"error": "unsupported_grant_type", "error_description": "Only authorization_code and refresh_token grants are supported"},
+            content={"error": "unsupported_grant_type", "error_description": "Supported grant types: authorization_code, refresh_token, urn:ietf:params:oauth:grant-type:token-exchange"},
         )
 
 
@@ -669,6 +667,91 @@ async def _handle_refresh_token_grant(
             "expires_in": config.JWT_EXPIRY,
             "id_token": id_token,
             "refresh_token": new_rt.token,
+        },
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+async def _handle_token_exchange_grant(
+    session: Session,
+    client: OAuthClient,
+    subject_token: str | None,
+    subject_token_type: str | None,
+    audience: str | None,
+):
+    if not subject_token:
+        return JSONResponse(
+            status_code=400,
+            content={"error": "invalid_request", "error_description": "subject_token is required"},
+        )
+
+    if subject_token_type and subject_token_type != "urn:ietf:params:oauth:token-type:access_token":
+        return JSONResponse(
+            status_code=400,
+            content={"error": "invalid_request", "error_description": "Only access_token subject_token_type is supported"},
+        )
+
+    if not audience:
+        return JSONResponse(
+            status_code=400,
+            content={"error": "invalid_request", "error_description": "audience is required"},
+        )
+
+    # Validate the subject token
+    try:
+        decoded = jwt.decode(
+            subject_token,
+            key=get_public_key_pem(),
+            algorithms=["EdDSA"],
+            audience=config.ISSUER,
+        )
+    except jwt.InvalidTokenError:
+        return JSONResponse(
+            status_code=400,
+            content={"error": "invalid_grant", "error_description": "Invalid or expired subject token"},
+        )
+
+    # Verify target audience is a registered client
+    target_client = OAuthClient.get_by_client_id(session, audience)
+    if not target_client:
+        return JSONResponse(
+            status_code=400,
+            content={"error": "invalid_target", "error_description": "Audience is not a registered OAuth client"},
+        )
+
+    # Look up identity for roles
+    identity = Identity.get(session, decoded["sub"])
+    if not identity:
+        return JSONResponse(
+            status_code=400,
+            content={"error": "invalid_grant", "error_description": "Identity not found"},
+        )
+    roles = [r.value if hasattr(r, "value") else r for r in identity.roles]
+
+    target_consent = Consent.get(session, identity.email, target_client.client_id)
+    if not target_consent:
+        return JSONResponse(
+            status_code=403,
+            content={
+                "error": "access_denied",
+                "error_description": "User has not consented to target client.",
+            }
+        )
+
+    # Issue new access token scoped to the target audience
+    access_token = create_signed_jwt(identity.email, roles, audience=audience)
+
+    logger.info(
+        "Token exchange: %s exchanged token for audience %s (via client: %s)",
+        identity.email, audience, client.client_id,
+    )
+
+    return JSONResponse(
+        content={
+            "access_token": access_token,
+            "issued_token_type": "urn:ietf:params:oauth:token-type:access_token",
+            "token_type": "Bearer",
+            "expires_in": config.JWT_EXPIRY,
         },
         headers={"Cache-Control": "no-store"},
     )

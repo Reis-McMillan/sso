@@ -11,7 +11,6 @@ from urllib.parse import quote
 from database import get_session
 from models.identity import Identity, Role
 from config import config
-from utils.cookie import encrypt_cookie
 
 logger = logging.getLogger("sso.identity")
 
@@ -22,8 +21,8 @@ async def get_all_identities(
     request: Request = None,
     session: Session = Depends(get_session)
 ):
-    if "admin" not in request.state.auth_cache.roles:
-        logger.warning("Forbidden: %s tried to list all identities", request.state.auth_cache.email)
+    if "admin" not in request.state.identity.roles:
+        logger.warning("Forbidden: %s tried to list all identities", request.state.identity.email)
         raise HTTPException(status_code=403, detail="Not authorized to perform this action.")
 
     return Identity.all(session)
@@ -36,8 +35,8 @@ async def create_identity(
     request: Request = None,
     session: Session = Depends(get_session),
 ):
-    if "admin" not in request.state.auth_cache.roles:
-        logger.warning("Forbidden: %s tried to create identity", request.state.auth_cache.email)
+    if "admin" not in request.state.identity.roles:
+        logger.warning("Forbidden: %s tried to create identity", request.state.identity.email)
         raise HTTPException(status_code=403, detail="Not authorized to perform this action.")
 
     if not expires:
@@ -53,7 +52,7 @@ async def create_identity(
         logger.warning("Identity creation failed: validation error for %s - %s", email, e)
         raise HTTPException(status_code=400, detail=str(e))
     url_safe_email = quote(new_id.email)
-    logger.info("Identity created: %s by %s", email, request.state.auth_cache.email)
+    logger.info("Identity created: %s by %s", email, request.state.identity.email)
     return Response(status_code=201, headers={"Location": f"/identity/{url_safe_email}"})
 
 
@@ -65,8 +64,8 @@ async def get_identity(
 ):
     r = Identity.get(session, email)
 
-    if "admin" not in request.state.auth_cache.roles:
-        logger.warning("Forbidden: %s tried to get identity %s", request.state.auth_cache.email, email)
+    if "admin" not in request.state.identity.roles:
+        logger.warning("Forbidden: %s tried to get identity %s", request.state.identity.email, email)
         raise HTTPException(status_code=403, detail="Not authorized to perform this action.")
     
     if not r:
@@ -88,8 +87,8 @@ async def update_identity(
     request: Request = None,
     session: Session = Depends(get_session),
 ):
-    if "admin" not in request.state.auth_cache.roles:
-        logger.warning("Forbidden: %s tried to update identity %s", request.state.auth_cache.email, email)
+    if "admin" not in request.state.identity.roles:
+        logger.warning("Forbidden: %s tried to update identity %s", request.state.identity.email, email)
         raise HTTPException(status_code=403, detail="Not authorized to perform this action.")
 
     try:
@@ -108,7 +107,7 @@ async def update_identity(
         logger.warning("Identity update failed: %s not found", email)
         raise HTTPException(status_code=404, detail="No Identity found.")
     url_safe_email = quote(email)
-    logger.info("Identity updated: %s by %s", email, request.state.auth_cache.email)
+    logger.info("Identity updated: %s by %s", email, request.state.identity.email)
     return Response(status_code=201, headers={"Location": f"/identity/{url_safe_email}"})
 
 
@@ -118,15 +117,15 @@ async def delete_identity(
     request: Request = None,
     session: Session = Depends(get_session)
 ):
-    if "admin" not in request.state.auth_cache.roles:
-        logger.warning("Forbidden: %s tried to delete identity %s", request.state.auth_cache.email, email)
+    if "admin" not in request.state.identity.roles:
+        logger.warning("Forbidden: %s tried to delete identity %s", request.state.identity.email, email)
         raise HTTPException(status_code=403, detail="Not authorized to perform this action.")
 
     r = Identity.close(session, email)
     if not r:
         logger.warning("Identity delete failed: %s not found", email)
         raise HTTPException(status_code=404, detail="Identity not found")
-    logger.info("Identity deleted: %s by %s", email, request.state.auth_cache.email)
+    logger.info("Identity deleted: %s by %s", email, request.state.identity.email)
     return Response(status_code=204)
 
 
@@ -135,7 +134,7 @@ async def logout(
     request: Request,
     session: Session = Depends(get_session)
 ):
-    logout_target = request.state.auth_cache.email
+    logout_target = request.state.identity.email
     new_key = Identity.make_auth_key()
     existing = Identity.get(session, logout_target)
     Identity.update(session, logout_target, new_key=new_key, new_expires=existing.expires)
@@ -149,8 +148,8 @@ async def logout_identity(
     request: Request,
     session: Session = Depends(get_session)
 ):
-    if "admin" not in request.state.auth_cache.roles:
-        logger.warning("Forbidden: %s tried to logout identity %s", request.state.auth_cache.email, id)
+    if "admin" not in request.state.identity.roles:
+        logger.warning("Forbidden: %s tried to logout identity %s", request.state.identity.email, id)
         raise HTTPException(status_code=403, detail="Not authorized to perform this action.")
 
     new_key = Identity.make_auth_key()
@@ -160,5 +159,5 @@ async def logout_identity(
         raise HTTPException(status_code=404)
 
     Identity.update(session, id, new_key=new_key, new_expires=existing.expires)
-    logger.info("Admin logout: %s by %s", id, request.state.auth_cache.email)
+    logger.info("Admin logout: %s by %s", id, request.state.identity.email)
     return Response(status_code=201)

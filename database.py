@@ -3,7 +3,7 @@ from config import config
 
 import models  # noqa: F401
 
-engine = create_engine(config.DATABASE_URL)
+engine = create_engine(config.DATABASE_URL, pool_pre_ping=True)
 
 
 def initialize_db():

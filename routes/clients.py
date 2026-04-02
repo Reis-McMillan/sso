@@ -39,7 +39,7 @@ async def create_client(
     body: ClientCreateRequest,
     session: Session = Depends(get_session),
 ):
-    if "admin" not in request.state.auth_cache.roles:
+    if "admin" not in request.state.identity.roles:
         raise HTTPException(status_code=403, detail="Admin access required")
 
     # Validate scopes exist in the database
@@ -58,7 +58,7 @@ async def create_client(
         token_endpoint_auth_method=body.token_endpoint_auth_method,
         is_public=body.is_public,
         client_secret_hash=hash_client_secret(plain_secret) if plain_secret else None,
-        owner_email=request.state.auth_cache.email,
+        owner_email=request.state.identity.email,
     )
     session.add(client)
     session.commit()
@@ -85,7 +85,7 @@ async def list_clients(
     request: Request,
     session: Session = Depends(get_session),
 ):
-    if "admin" not in request.state.auth_cache.roles:
+    if "admin" not in request.state.identity.roles:
         raise HTTPException(status_code=403, detail="Admin access required")
 
     clients = OAuthClient.all(session)
@@ -108,7 +108,7 @@ async def get_client(
     request: Request,
     session: Session = Depends(get_session),
 ):
-    if "admin" not in request.state.auth_cache.roles:
+    if "admin" not in request.state.identity.roles:
         raise HTTPException(status_code=403, detail="Admin access required")
 
     client = OAuthClient.get_by_client_id(session, client_id)
@@ -135,7 +135,7 @@ async def update_client(
     request: Request,
     session: Session = Depends(get_session),
 ):
-    if "admin" not in request.state.auth_cache.roles:
+    if "admin" not in request.state.identity.roles:
         raise HTTPException(status_code=403, detail="Admin access required")
 
     client = OAuthClient.get_by_client_id(session, client_id)
@@ -172,7 +172,7 @@ async def delete_client(
     request: Request,
     session: Session = Depends(get_session),
 ):
-    if "admin" not in request.state.auth_cache.roles:
+    if "admin" not in request.state.identity.roles:
         raise HTTPException(status_code=403, detail="Admin access required")
 
     client = OAuthClient.get_by_client_id(session, client_id)
