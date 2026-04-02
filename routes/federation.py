@@ -6,13 +6,17 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, RedirectResponse
 from sqlmodel import Session
+from urllib.parse import urlencode
 
 from config import config
 from database import get_session
 from middleware.authenticated import authenticate_user
+from models.authorization_code import AuthorizationCode
 from models.external_provider import ExternalProvider
 from models.external_token import ExternalToken
 from models.federation_session import FederationSession
+from models.identity import Identity
+from models.oauth2_client import OAuthClient
 from models.oauth2_session import OAuth2Session
 from models.scope import Scope
 from utils.browser_auth import get_browser_identity
@@ -87,7 +91,9 @@ async def initiate_federation(
 async def federation_callback(
     request: Request,
     provider_id: str,
-    code: str = Query(...),
+    code: str | None = Query(None),
+    error: str | None = Query(None),
+    error_description: str | None = Query(None),
     state: str = Query(...),
     session: Session = Depends(get_session),
 ):
@@ -99,6 +105,78 @@ async def federation_callback(
 
     if fed_session.provider_id != provider_id:
         raise HTTPException(status_code=400, detail="Provider mismatch")
+
+    # Handle error from upstream provider (user cancelled, no account, etc.)
+    if error is not None:
+        logger.warning(
+            "Federation error from %s for %s: %s - %s",
+            provider_id, fed_session.identity_email, error, error_description,
+        )
+
+        # Capture fields before deleting the session
+        identity_email = fed_session.identity_email
+        failed_scope_names = list(fed_session.scopes_requested)
+        oauth2_session_id = fed_session.oauth2_session_id
+
+        session.delete(fed_session)
+        session.commit()
+
+        # If chained from OAuth2 flow, issue auth code with reduced scopes
+        if oauth2_session_id:
+            oauth2_sess = OAuth2Session.get_by_session_id(session, oauth2_session_id)
+            if oauth2_sess and not oauth2_sess.is_expired():
+                identity = Identity.get(session, identity_email)
+                client = OAuthClient.get_by_client_id(session, oauth2_sess.client_id)
+
+                if identity and client:
+                    full_scopes = oauth2_sess.scope.split()
+                    granted_scopes = [s for s in full_scopes if s not in failed_scope_names]
+
+                    auth_time = identity.last_auth_time or datetime.now(timezone.utc)
+                    auth_code = AuthorizationCode(
+                        client_id=client.client_id,
+                        identity_email=identity.email,
+                        redirect_uri=oauth2_sess.redirect_uri,
+                        scopes=granted_scopes,
+                        nonce=oauth2_sess.nonce,
+                        code_challenge=oauth2_sess.code_challenge,
+                        code_challenge_method=oauth2_sess.code_challenge_method,
+                        auth_time=auth_time,
+                        expires_at=datetime.now(timezone.utc)
+                        + timedelta(seconds=config.AUTHORIZATION_CODE_TTL),
+                    )
+                    session.add(auth_code)
+
+                    redirect_uri = oauth2_sess.redirect_uri
+                    state_param = oauth2_sess.state
+
+                    session.delete(oauth2_sess)
+                    session.commit()
+                    session.refresh(auth_code)
+
+                    params = {"code": auth_code.code}
+                    if state_param:
+                        params["state"] = state_param
+
+                    logger.info(
+                        "Federation failed for %s, issuing auth code with reduced scopes: %s",
+                        identity_email, granted_scopes,
+                    )
+                    return RedirectResponse(
+                        url=f"{redirect_uri}?{urlencode(params)}", status_code=302
+                    )
+
+        return JSONResponse(
+            status_code=400,
+            content={
+                "error": "federation_failed",
+                "error_description": error_description or f"Upstream provider {provider_id} returned: {error}",
+                "provider_id": provider_id,
+            },
+        )
+
+    if not code:
+        raise HTTPException(status_code=400, detail="Missing authorization code from provider")
 
     provider = ExternalProvider.get_by_provider_id(session, provider_id)
     if not provider:
@@ -212,9 +290,21 @@ async def get_external_tokens(
 
     # Auto-refresh if expired
     if ext_token.is_expired() and ext_token.refresh_token:
-        ext_token = await _refresh_external_token(session, ext_token)
-        if not ext_token:
-            raise HTTPException(status_code=502, detail="Failed to refresh external token")
+        refreshed = await _refresh_external_token(session, ext_token)
+        if not refreshed:
+            # Upstream rejected the refresh token — delete stale record
+            session.delete(ext_token)
+            session.commit()
+            return JSONResponse(
+                status_code=401,
+                content={
+                    "error": "reauthorization_required",
+                    "error_description": "External token refresh failed. User must re-authorize with the provider.",
+                    "provider_id": provider_id,
+                },
+                headers={"Cache-Control": "no-store"},
+            )
+        ext_token = refreshed
 
     return JSONResponse(
         content={

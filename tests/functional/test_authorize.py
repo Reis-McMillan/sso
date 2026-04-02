@@ -190,13 +190,15 @@ def test_authorize_consent_approve(session, client):
     client.cookies.set('token', token)
     client.cookies.set('token_iv', iv)
 
-    # Create an oauth2 session
+    # Create an oauth2 session with CSRF token
+    csrf = 'test-csrf-approve'
     oauth2_sess = OAuth2Session(
         client_id=oa.client_id,
         redirect_uri='https://authtest.example.com/callback',
         response_type='code',
         scope='openid email',
         state='consent-state',
+        csrf_token=csrf,
     )
     session.add(oauth2_sess)
     session.commit()
@@ -207,6 +209,7 @@ def test_authorize_consent_approve(session, client):
         data={
             'oauth2_session_id': oauth2_sess.session_id,
             'consent_action': 'approve',
+            'csrf_token': csrf,
         },
         follow_redirects=False,
     )
@@ -226,12 +229,14 @@ def test_authorize_consent_deny(session, client):
     client.cookies.set('token', token)
     client.cookies.set('token_iv', iv)
 
+    csrf = 'test-csrf-deny'
     oauth2_sess = OAuth2Session(
         client_id=oa.client_id,
         redirect_uri='https://authtest.example.com/callback',
         response_type='code',
         scope='openid',
         state='deny-state',
+        csrf_token=csrf,
     )
     session.add(oauth2_sess)
     session.commit()
@@ -242,6 +247,7 @@ def test_authorize_consent_deny(session, client):
         data={
             'oauth2_session_id': oauth2_sess.session_id,
             'consent_action': 'deny',
+            'csrf_token': csrf,
         },
         follow_redirects=False,
     )
@@ -263,6 +269,7 @@ def test_authorize_consent_expired_session(session, client):
         data={
             'oauth2_session_id': 'nonexistent-session-id',
             'consent_action': 'approve',
+            'csrf_token': 'doesnt-matter',
         },
         follow_redirects=False,
     )
@@ -273,11 +280,13 @@ def test_authorize_consent_expired_session(session, client):
 
 def test_authorize_consent_unauthenticated(session, client):
     oa = _create_test_client(session, "Unauth Consent Test")
+    csrf = 'test-csrf-unauth'
     oauth2_sess = OAuth2Session(
         client_id=oa.client_id,
         redirect_uri='https://authtest.example.com/callback',
         response_type='code',
         scope='openid',
+        csrf_token=csrf,
     )
     session.add(oauth2_sess)
     session.commit()
@@ -289,6 +298,7 @@ def test_authorize_consent_unauthenticated(session, client):
         data={
             'oauth2_session_id': oauth2_sess.session_id,
             'consent_action': 'approve',
+            'csrf_token': csrf,
         },
         follow_redirects=False,
     )

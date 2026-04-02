@@ -53,10 +53,12 @@ def _find_missing_federation_provider(
     """Check if user has valid external tokens for all federation providers.
 
     Returns the first provider_id that is missing a token, or None if all are present.
+    A provider is considered missing if there is no token record or no refresh token
+    (the access token can be refreshed later via /federation/tokens).
     """
     for provider_id, scope_names in federation_scopes.items():
         ext_token = ExternalToken.get(session, identity_email, provider_id)
-        if not ext_token or ext_token.is_expired():
+        if not ext_token or not ext_token.refresh_token_encrypted:
             return provider_id
     return None
 
@@ -583,6 +585,7 @@ async def _handle_authorization_code_grant(
             "expires_in": config.JWT_EXPIRY,
             "id_token": id_token,
             "refresh_token": rt.token,
+            "scope": " ".join(auth_code.scopes),
         },
         headers={"Cache-Control": "no-store"},
     )
@@ -667,6 +670,7 @@ async def _handle_refresh_token_grant(
             "expires_in": config.JWT_EXPIRY,
             "id_token": id_token,
             "refresh_token": new_rt.token,
+            "scope": " ".join(rt.scopes),
         },
         headers={"Cache-Control": "no-store"},
     )
