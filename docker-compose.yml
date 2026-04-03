@@ -1,30 +1,30 @@
 services:
   postgres:
     image: postgres:17
-    container_name: sso-postgres
+    container_name: verys-postgres
     restart: unless-stopped
     ports:
       - "5432:5432"
     environment:
-      POSTGRES_USER: sso
-      POSTGRES_PASSWORD: sso
-      POSTGRES_DB: sso
+      POSTGRES_USER: verys
+      POSTGRES_PASSWORD: verys
+      POSTGRES_DB: verys
     volumes:
       - pgdata:/var/lib/postgresql/data
 
-  sso:
+  verys:
     build:
       context: .
       args:
         ENV: dev
-    container_name: sso-backend
+    container_name: verys-backend
     restart: unless-stopped
     ports:
       - "8080:8080"
     depends_on:
       - postgres
     environment:
-      DATABASE_URL: postgresql://sso:sso@postgres:5432/sso
+      DATABASE_URL: postgresql://verys:verys@postgres:5432/verys
       USERNAME_SMTP: ${USERNAME_SMTP}
       PASSWORD_SMTP: ${PASSWORD_SMTP}
       JWT_PRIVATE_KEY: ${JWT_PRIVATE_KEY}

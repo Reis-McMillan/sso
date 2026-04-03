@@ -7,7 +7,7 @@ from sqlmodel import Session
 
 from models.oauth2_client import OAuthClient
 
-logger = logging.getLogger("sso.client_auth")
+logger = logging.getLogger("verys.client_auth")
 
 
 def hash_client_secret(secret: str) -> str:

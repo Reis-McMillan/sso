@@ -1,7 +1,7 @@
 import base64
 import os
 
-DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql://sso:sso@localhost:5432/sso")
+DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql://verys:verys@localhost:5432/verys")
 VERIFY_FROM_ADDR = 'support@mcmlln.dev'
 USERNAME_SMTP = os.environ.get('USERNAME_SMTP')
 PASSWORD_SMTP = os.environ.get('PASSWORD_SMTP')

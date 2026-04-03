@@ -14,11 +14,11 @@ from config import config
 
 async def test_email():
     message = EmailMessage()
-    message['Subject'] = 'SSO Integration Test - Email Delivery'
+    message['Subject'] = 'Verys Integration Test - Email Delivery'
     message['From'] = config.VERIFY_FROM_ADDR
     message['To'] = config.VERIFY_DEBUG_ADDR
     message.set_content(
-        'This is a test email from the SSO integration test suite.\n'
+        'This is a test email from the Verys integration test suite.\n'
         'If you are receiving this, email delivery is working correctly.'
     )
 

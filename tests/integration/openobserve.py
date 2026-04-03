@@ -22,7 +22,7 @@ def test_log_ingestion():
     handler = OpenObserveHandler(
         endpoint=endpoint,
         token=token,
-        stream='test-sso',
+        stream='test-verys',
         batch_size=1,
         flush_interval=60.0,
     )
@@ -31,7 +31,7 @@ def test_log_ingestion():
         datefmt="%Y-%m-%d %H:%M:%S",
     ))
 
-    logger = logging.getLogger("sso.integration_test")
+    logger = logging.getLogger("verys.integration_test")
     logger.setLevel(logging.DEBUG)
     logger.addHandler(handler)
 

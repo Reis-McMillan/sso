@@ -12,7 +12,7 @@ from database import get_session
 from models.identity import Identity, Role
 from config import config
 
-logger = logging.getLogger("sso.identity")
+logger = logging.getLogger("verys.identity")
 
 router = APIRouter(prefix="/identity", tags=["Identity"])
 

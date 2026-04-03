@@ -19,24 +19,24 @@ async def lifespan(app: FastAPI):
     # Seed standard OIDC scopes
     for db_session in get_session():
         Scope.seed_oidc_scopes(db_session)
-        # Seed SSO public client
-        if not OAuthClient.get_by_client_id(db_session, config.SSO_CLIENT_ID):
-            sso_client = OAuthClient(
-                client_id=config.SSO_CLIENT_ID,
-                client_name="SSO Client",
-                redirect_uris=[config.SSO_CLIENT_REDIRECT_URI],
+        # Seed Verys public client
+        if not OAuthClient.get_by_client_id(db_session, config.VERYS_CLIENT_ID):
+            verys_client = OAuthClient(
+                client_id=config.VERYS_CLIENT_ID,
+                client_name="Verys Client",
+                redirect_uris=[config.VERYS_CLIENT_REDIRECT_URI],
                 allowed_scopes=["openid"],
                 grant_types=["authorization_code", "refresh_token"],
                 response_types=["code"],
                 token_endpoint_auth_method="none",
                 is_public=True,
             )
-            db_session.add(sso_client)
+            db_session.add(verys_client)
             db_session.commit()
-            logging.getLogger("sso").info("Seeded SSO public client: %s", config.SSO_CLIENT_ID)
-    logging.getLogger("sso").info("SSO service starting")
+            logging.getLogger("verys").info("Seeded Verys public client: %s", config.VERYS_CLIENT_ID)
+    logging.getLogger("verys").info("Verys service starting")
     yield
-    logging.getLogger("sso").info("SSO service shutting down")
+    logging.getLogger("verys").info("Verys service shutting down")
     shutdown_logging()
 
 

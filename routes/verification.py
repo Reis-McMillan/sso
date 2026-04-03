@@ -18,7 +18,7 @@ from models.oauth2_session import OAuth2Session
 from config import config
 from utils.cookie import encrypt_cookie
 
-logger = logging.getLogger("sso.verification")
+logger = logging.getLogger("verys.verification")
 
 TEMPLATE_DIR = Path(__file__).resolve().parent.parent / "templates"
 

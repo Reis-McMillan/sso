@@ -7,7 +7,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from utils.jwt import get_public_key_pem
 
-logger = logging.getLogger("sso.userinfo")
+logger = logging.getLogger("verys.userinfo")
 
 router = APIRouter(tags=["UserInfo"])
 

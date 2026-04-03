@@ -10,7 +10,7 @@ from config import config
 _listener = None
 
 class OpenObserveHandler(logging.Handler):
-    def __init__(self, endpoint, token, org="default", stream="sso",
+    def __init__(self, endpoint, token, org="default", stream="verys",
                  batch_size=10, flush_interval=5.0):
         super().__init__()
         self.url = f"{endpoint}/api/{org}/{stream}/_json"

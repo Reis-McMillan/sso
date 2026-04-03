@@ -12,7 +12,7 @@ from models.oauth2_client import OAuthClient
 from models.refresh_token import RefreshToken
 from utils.jwt import get_public_key_pem
 
-logger = logging.getLogger("sso.session")
+logger = logging.getLogger("verys.session")
 
 router = APIRouter(tags=["Session"])
 
@@ -49,7 +49,7 @@ async def end_session(
         RefreshToken.revoke_all_for_user_client(session, identity_email, client_id)
         logger.info("Revoked refresh tokens for %s (client: %s)", identity_email, client_id)
 
-    # Clear SSO cookies
+    # Clear Verys cookies
     response = None
 
     if post_logout_redirect_uri and client_id:

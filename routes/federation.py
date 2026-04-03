@@ -21,7 +21,7 @@ from models.oauth2_session import OAuth2Session
 from utils.browser_auth import get_browser_identity
 from utils.encryption import encrypt_field
 
-logger = logging.getLogger("sso.federation")
+logger = logging.getLogger("verys.federation")
 
 router = APIRouter(prefix="/federation", tags=["Federation"])
 

@@ -7,7 +7,7 @@ from sqlmodel import Session
 from database import get_session
 from models.scope import Scope
 
-logger = logging.getLogger("sso.scopes")
+logger = logging.getLogger("verys.scopes")
 
 router = APIRouter(prefix="/scopes", tags=["Scopes"])
 

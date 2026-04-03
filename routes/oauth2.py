@@ -24,7 +24,7 @@ from utils.client_auth import authenticate_client
 from utils.jwt import create_id_token, create_signed_jwt, get_public_key_pem
 from utils.pkce import verify_code_challenge
 
-logger = logging.getLogger("sso.oauth2")
+logger = logging.getLogger("verys.oauth2")
 
 router = APIRouter(tags=["OAuth2"])
 

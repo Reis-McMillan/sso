@@ -10,7 +10,7 @@ from models.oauth2_client import OAuthClient
 from models.scope import Scope
 from utils.client_auth import hash_client_secret
 
-logger = logging.getLogger("sso.clients")
+logger = logging.getLogger("verys.clients")
 
 router = APIRouter(prefix="/clients", tags=["Clients"])
 

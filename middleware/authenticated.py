@@ -6,7 +6,7 @@ import jwt
 
 from utils.jwt import get_public_key_pem
 
-logger = logging.getLogger("sso.auth")
+logger = logging.getLogger("verys.auth")
 
 security = HTTPBearer(auto_error=False)
 

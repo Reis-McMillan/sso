@@ -10,7 +10,7 @@ from models.external_token import ExternalToken
 from models.scope import Scope
 from utils.encryption import encrypt_field
 
-logger = logging.getLogger("sso.providers")
+logger = logging.getLogger("verys.providers")
 
 router = APIRouter(prefix="/providers", tags=["Providers"])
 

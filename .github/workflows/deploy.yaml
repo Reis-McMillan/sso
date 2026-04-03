@@ -11,13 +11,13 @@ jobs:
       postgres:
         image: postgres:17
         env:
-          POSTGRES_USER: sso
-          POSTGRES_PASSWORD: sso
-          POSTGRES_DB: sso
+          POSTGRES_USER: verys
+          POSTGRES_PASSWORD: verys
+          POSTGRES_DB: verys
         ports:
           - 5432:5432
         options: >-
-          --health-cmd="pg_isready -U sso"
+          --health-cmd="pg_isready -U verys"
           --health-interval=10s
           --health-timeout=5s
           --health-retries=5
@@ -107,13 +107,13 @@ jobs:
           cmd: >
             yq -i
             '.spec.template.metadata.annotations."kubectl.kubernetes.io/restartedAt" = now'
-            deploy/base/sso/sso-backend-deployment.yaml
+            deploy/base/verys/verys-backend-deployment.yaml
 
       - name: Commit and push
         run: |
           cd deploy
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add base/sso/sso-backend-deployment.yaml
-          git commit -m "redeploy sso backend (${{ github.sha }})"
+          git add base/verys/verys-backend-deployment.yaml
+          git commit -m "redeploy verys backend (${{ github.sha }})"
           git push
