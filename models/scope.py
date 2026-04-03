@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
-from typing import List, Optional
+from typing import Optional
 
-from sqlalchemy import Column, ARRAY, String, DateTime
+from sqlalchemy import Column, DateTime
 from sqlmodel import Field, SQLModel, Session, select
 
 
@@ -12,10 +12,6 @@ class Scope(SQLModel, table=True):
     name: str = Field(unique=True, index=True)
     description: str = Field()
     provider_id: Optional[str] = Field(default=None, index=True)
-    provider_scopes: List[str] = Field(
-        default_factory=list,
-        sa_column=Column(ARRAY(String)),
-    )
     created_at: datetime = Field(
         default_factory=lambda: datetime.now(timezone.utc),
         sa_column=Column(DateTime(timezone=True)),

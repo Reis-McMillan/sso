@@ -16,13 +16,11 @@ class ScopeCreateRequest(BaseModel):
     name: str
     description: str
     provider_id: str | None = None
-    provider_scopes: list[str] = []
 
 
 class ScopeUpdateRequest(BaseModel):
     description: str | None = None
     provider_id: str | None = None
-    provider_scopes: list[str] | None = None
 
 
 @router.post("/", status_code=201)
@@ -42,7 +40,6 @@ async def create_scope(
         name=body.name,
         description=body.description,
         provider_id=body.provider_id,
-        provider_scopes=body.provider_scopes,
     )
     session.add(scope)
     session.commit()
@@ -53,7 +50,7 @@ async def create_scope(
         "name": scope.name,
         "description": scope.description,
         "provider_id": scope.provider_id,
-        "provider_scopes": scope.provider_scopes,
+
         "created_at": scope.created_at.isoformat() if scope.created_at else None,
     }
 
@@ -72,7 +69,7 @@ async def list_scopes(
             "name": s.name,
             "description": s.description,
             "provider_id": s.provider_id,
-            "provider_scopes": s.provider_scopes,
+
             "created_at": s.created_at.isoformat() if s.created_at else None,
         }
         for s in scopes
@@ -96,7 +93,7 @@ async def get_scope(
         "name": scope.name,
         "description": scope.description,
         "provider_id": scope.provider_id,
-        "provider_scopes": scope.provider_scopes,
+
         "created_at": scope.created_at.isoformat() if scope.created_at else None,
     }
 
@@ -119,8 +116,6 @@ async def update_scope(
         scope.description = body.description
     if body.provider_id is not None:
         scope.provider_id = body.provider_id
-    if body.provider_scopes is not None:
-        scope.provider_scopes = body.provider_scopes
 
     session.add(scope)
     session.commit()

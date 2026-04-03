@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
-from typing import Optional
+from typing import List, Optional
 
-from sqlalchemy import Column, DateTime
+from sqlalchemy import Column, ARRAY, String, DateTime
 from sqlmodel import Field, SQLModel, Session, select
 
 from utils.encryption import encrypt_field, decrypt_field
@@ -17,6 +17,10 @@ class ExternalProvider(SQLModel, table=True):
     client_secret_encrypted: str = Field()
     authorization_endpoint: str = Field()
     token_endpoint: str = Field()
+    scopes: List[str] = Field(
+        default_factory=list,
+        sa_column=Column(ARRAY(String)),
+    )
     enabled: bool = Field(default=True)
     created_at: datetime = Field(
         default_factory=lambda: datetime.now(timezone.utc),

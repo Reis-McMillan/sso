@@ -22,6 +22,7 @@ class ProviderCreateRequest(BaseModel):
     client_secret: str
     authorization_endpoint: str
     token_endpoint: str
+    scopes: list[str] = []
 
 
 class ProviderUpdateRequest(BaseModel):
@@ -31,6 +32,7 @@ class ProviderUpdateRequest(BaseModel):
     authorization_endpoint: str | None = None
     token_endpoint: str | None = None
     enabled: bool | None = None
+    scopes: list[str] | None = None
 
 
 @router.post("/", status_code=201)
@@ -53,6 +55,7 @@ async def create_provider(
         client_secret_encrypted=encrypt_field(body.client_secret),
         authorization_endpoint=body.authorization_endpoint,
         token_endpoint=body.token_endpoint,
+        scopes=body.scopes,
     )
     session.add(provider)
     session.commit()
@@ -65,6 +68,7 @@ async def create_provider(
         "client_id": provider.client_id,
         "authorization_endpoint": provider.authorization_endpoint,
         "token_endpoint": provider.token_endpoint,
+        "scopes": provider.scopes,
         "enabled": provider.enabled,
         "created_at": provider.created_at.isoformat() if provider.created_at else None,
     }
@@ -86,6 +90,7 @@ async def list_providers(
             "client_id": p.client_id,
             "authorization_endpoint": p.authorization_endpoint,
             "token_endpoint": p.token_endpoint,
+            "scopes": p.scopes,
             "enabled": p.enabled,
             "created_at": p.created_at.isoformat() if p.created_at else None,
         }
@@ -112,6 +117,7 @@ async def get_provider(
         "client_id": provider.client_id,
         "authorization_endpoint": provider.authorization_endpoint,
         "token_endpoint": provider.token_endpoint,
+        "scopes": provider.scopes,
         "enabled": provider.enabled,
         "created_at": provider.created_at.isoformat() if provider.created_at else None,
     }
@@ -143,6 +149,8 @@ async def update_provider(
         provider.token_endpoint = body.token_endpoint
     if body.enabled is not None:
         provider.enabled = body.enabled
+    if body.scopes is not None:
+        provider.scopes = body.scopes
 
     session.add(provider)
     session.commit()

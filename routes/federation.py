@@ -18,7 +18,6 @@ from models.federation_session import FederationSession
 from models.identity import Identity
 from models.oauth2_client import OAuthClient
 from models.oauth2_session import OAuth2Session
-from models.scope import Scope
 from utils.browser_auth import get_browser_identity
 from utils.encryption import encrypt_field
 
@@ -45,16 +44,12 @@ async def initiate_federation(
     if not provider or not provider.enabled:
         raise HTTPException(status_code=404, detail="Provider not found or disabled")
 
-    # Resolve SSO scope names to provider scopes
+    # Get scopes to request from the provider
     requested_scope_names = scope_names.split()
-    provider_scopes = set()
-    for name in requested_scope_names:
-        scope = Scope.get_by_name(session, name)
-        if scope and scope.provider_id == provider_id:
-            provider_scopes.update(scope.provider_scopes)
+    provider_scopes = set(provider.scopes) if provider.scopes else set()
 
     if not provider_scopes:
-        raise HTTPException(status_code=400, detail="No valid provider scopes for requested scope names")
+        raise HTTPException(status_code=400, detail="No scopes configured for this provider")
 
     # Create federation session to track the flow
     fed_session = FederationSession(
