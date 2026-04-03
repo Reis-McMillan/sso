@@ -21,6 +21,8 @@ AUTHORIZATION_CODE_TTL = 60  # seconds
 REFRESH_TOKEN_TTL = 30 * 24 * 60 * 60  # 30 days
 ID_TOKEN_EXPIRY = 5 * 60  # 5 minutes
 FIELD_ENCRYPTION_KEY = 'YWJjZDEyMzRhYmNkMTIzNGFiY2QxMjM0YWJjZDEyMzQ='
+VERYS_CLIENT_ID = 'test-verys-client'
+VERYS_CLIENT_REDIRECT_URI = 'http://localhost:8080/callback'
 LOGGING_ENABLED = False
 OPENOBSERVE_ENDPOINT = os.environ.get('OPENOBSERVE_ENDPOINT')
 _oo_user = os.environ.get('OPENOBSERVE_USER')
