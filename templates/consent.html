@@ -36,7 +36,7 @@
             {% endfor %}
         </ul>
 
-        <form method="POST" action="/authorize/consent">
+        <form method="POST" action="{{ issuer }}/authorize/consent">
             <input type="hidden" name="oauth2_session_id" value="{{ oauth2_session_id }}">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
             <div class="actions">

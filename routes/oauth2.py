@@ -238,6 +238,7 @@ async def authorize(
             "request": request,
             "oauth2_session_id": oauth2_session.session_id,
             "client_name": client.client_name,
+            "issuer": config.ISSUER,
         })
 
     # Check consent
@@ -308,6 +309,7 @@ async def authorize(
         "scope_details": scope_details,
         "oauth2_session_id": oauth2_session.session_id,
         "csrf_token": csrf_token,
+        "issuer": config.ISSUER,
     })
 
 
