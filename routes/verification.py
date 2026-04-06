@@ -68,6 +68,7 @@ async def verify_code(
         "samesite": "lax",
         "max_age": max_age,
         "path": "/",
+        "domain": ".mcmlln.dev",
     }
 
     # If this verification was part of an OAuth2 flow, redirect back to /authorize
