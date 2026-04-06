@@ -14,6 +14,7 @@ VERIFY_DEBUG_ADDR = 'reismcmillan19@gmail.com'
 ENCRYPT_COOKIE_NAME = 'token'
 ENCRYPT_COOKIE_KEY = 'YWJjZDEyMzRhYmNkMTIzNGFiY2QxMjM0YWJjZDEyMzQ='
 ENCRYPT_COOKIE_SEPARATOR = '|'
+COOKIE_DOMAIN = None
 JWT_EXPIRY = 5 * 60 # 5 minutes
 JWT_PRIVATE_KEY = os.environ.get('JWT_PRIVATE_KEY')
 ISSUER = os.environ.get('OIDC_ISSUER', 'http://localhost:8080')

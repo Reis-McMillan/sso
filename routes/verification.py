@@ -68,8 +68,9 @@ async def verify_code(
         "samesite": "lax",
         "max_age": max_age,
         "path": "/",
-        "domain": ".mcmlln.dev",
     }
+    if config.COOKIE_DOMAIN:
+        cookie_opts["domain"] = config.COOKIE_DOMAIN
 
     # If this verification was part of an OAuth2 flow, redirect back to /authorize
     if oauth2_session:

@@ -25,6 +25,7 @@ VERIFY_BASE_URL = os.environ.get('VERIFY_BASE_URL')
 ENCRYPT_COOKIE_NAME = 'token'
 ENCRYPT_COOKIE_KEY = os.environ.get('ENCRYPT_COOKIE_KEY')
 ENCRYPT_COOKIE_SEPARATOR = '|'
+COOKIE_DOMAIN = os.environ.get('COOKIE_DOMAIN', '.mcmlln.dev')
 JWT_EXPIRY = 5 * 60 # 5 minutes
 JWT_PRIVATE_KEY = os.environ.get('JWT_PRIVATE_KEY')
 ISSUER = os.environ.get('OIDC_ISSUER', 'https://api.verys.mcmlln.dev')
