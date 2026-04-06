@@ -20,7 +20,8 @@ async def lifespan(app: FastAPI):
     for db_session in get_session():
         Scope.seed_oidc_scopes(db_session)
         # Seed Verys public client
-        if not OAuthClient.get_by_client_id(db_session, config.VERYS_CLIENT_ID):
+        verys_client = OAuthClient.get_by_client_id(db_session, config.VERYS_CLIENT_ID)
+        if not verys_client:
             verys_client = OAuthClient(
                 client_id=config.VERYS_CLIENT_ID,
                 client_name="Verys Client",
@@ -34,6 +35,10 @@ async def lifespan(app: FastAPI):
             db_session.add(verys_client)
             db_session.commit()
             logging.getLogger("verys").info("Seeded Verys public client: %s", config.VERYS_CLIENT_ID)
+        elif verys_client.redirect_uris != [config.VERYS_CLIENT_REDIRECT_URI]:
+            verys_client.redirect_uris = [config.VERYS_CLIENT_REDIRECT_URI]
+            db_session.commit()
+            logging.getLogger("verys").info("Updated Verys public client redirect_uris: %s", config.VERYS_CLIENT_ID)
     logging.getLogger("verys").info("Verys service starting")
     yield
     logging.getLogger("verys").info("Verys service shutting down")
