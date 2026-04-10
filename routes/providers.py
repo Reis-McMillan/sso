@@ -93,12 +93,8 @@ async def create_provider(
 
 @router.get("/")
 async def list_providers(
-    request: Request,
     session: Session = Depends(get_session),
 ):
-    if "admin" not in request.state.identity.roles:
-        raise HTTPException(status_code=403, detail="Admin access required")
-
     providers = ExternalProvider.all(session)
     return [
         {
@@ -118,12 +114,8 @@ async def list_providers(
 @router.get("/{provider_id}")
 async def get_provider(
     provider_id: str,
-    request: Request,
     session: Session = Depends(get_session),
 ):
-    if "admin" not in request.state.identity.roles:
-        raise HTTPException(status_code=403, detail="Admin access required")
-
     provider = ExternalProvider.get_by_provider_id(session, provider_id)
     if not provider:
         raise HTTPException(status_code=404, detail="Provider not found")
