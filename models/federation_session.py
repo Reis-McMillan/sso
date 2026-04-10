@@ -19,10 +19,6 @@ class FederationSession(SQLModel, table=True):
     )
     identity_email: str = Field()
     provider_id: str = Field()
-    scopes_requested: List[str] = Field(
-        default_factory=list,
-        sa_column=Column(ARRAY(String)),
-    )
     oauth2_session_id: Optional[str] = Field(default=None)
     created_at: datetime = Field(
         default_factory=lambda: datetime.now(timezone.utc),

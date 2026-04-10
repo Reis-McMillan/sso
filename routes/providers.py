@@ -1,5 +1,6 @@
 import logging
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlmodel import Session
@@ -22,6 +23,7 @@ class ProviderCreateRequest(BaseModel):
     client_secret: str
     authorization_endpoint: str
     token_endpoint: str
+    discovery_url: str
     scopes: list[str] = []
 
 
@@ -48,6 +50,19 @@ async def create_provider(
     if existing:
         raise HTTPException(status_code=409, detail="Provider already exists")
 
+    # Fetch OIDC discovery to get jwks_uri
+    try:
+        async with httpx.AsyncClient() as client:
+            discovery_response = await client.get(body.discovery_url, headers={"Accept": "application/json"})
+        if discovery_response.status_code != 200:
+            raise HTTPException(status_code=400, detail="Failed to fetch OIDC discovery document")
+        discovery = discovery_response.json()
+        jwks_uri = discovery.get("jwks_uri")
+        if not jwks_uri:
+            raise HTTPException(status_code=400, detail="OIDC discovery document missing jwks_uri")
+    except httpx.RequestError as e:
+        raise HTTPException(status_code=400, detail=f"Failed to reach discovery URL: {e}")
+
     provider = ExternalProvider(
         provider_id=body.provider_id,
         display_name=body.display_name,
@@ -55,6 +70,7 @@ async def create_provider(
         client_secret_encrypted=encrypt_field(body.client_secret),
         authorization_endpoint=body.authorization_endpoint,
         token_endpoint=body.token_endpoint,
+        jwks_uri=jwks_uri,
         scopes=body.scopes,
     )
     session.add(provider)
@@ -68,6 +84,7 @@ async def create_provider(
         "client_id": provider.client_id,
         "authorization_endpoint": provider.authorization_endpoint,
         "token_endpoint": provider.token_endpoint,
+        "jwks_uri": provider.jwks_uri,
         "scopes": provider.scopes,
         "enabled": provider.enabled,
         "created_at": provider.created_at.isoformat() if provider.created_at else None,
@@ -117,6 +134,7 @@ async def get_provider(
         "client_id": provider.client_id,
         "authorization_endpoint": provider.authorization_endpoint,
         "token_endpoint": provider.token_endpoint,
+        "jwks_uri": provider.jwks_uri,
         "scopes": provider.scopes,
         "enabled": provider.enabled,
         "created_at": provider.created_at.isoformat() if provider.created_at else None,

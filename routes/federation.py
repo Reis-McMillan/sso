@@ -3,10 +3,10 @@ from datetime import datetime, timedelta, timezone
 from urllib.parse import urlencode
 
 import httpx
+import jwt as pyjwt  # noqa: F811
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, RedirectResponse
 from sqlmodel import Session
-from urllib.parse import urlencode
 
 from config import config
 from database import get_session
@@ -19,7 +19,7 @@ from models.identity import Identity
 from models.oauth2_client import OAuthClient
 from models.oauth2_session import OAuth2Session
 from utils.browser_auth import get_browser_identity
-from utils.encryption import encrypt_field
+
 
 logger = logging.getLogger("verys.federation")
 
@@ -30,7 +30,6 @@ router = APIRouter(prefix="/federation", tags=["Federation"])
 async def initiate_federation(
     request: Request,
     provider_id: str = Query(...),
-    scope_names: str = Query(...),
     oauth2_session_id: str | None = Query(None),
     session: Session = Depends(get_session),
 ):
@@ -44,8 +43,6 @@ async def initiate_federation(
     if not provider or not provider.enabled:
         raise HTTPException(status_code=404, detail="Provider not found or disabled")
 
-    # Get scopes to request from the provider
-    requested_scope_names = scope_names.split()
     provider_scopes = set(provider.scopes) if provider.scopes else set()
 
     if not provider_scopes:
@@ -55,7 +52,6 @@ async def initiate_federation(
     fed_session = FederationSession(
         identity_email=identity_email,
         provider_id=provider_id,
-        scopes_requested=requested_scope_names,
         oauth2_session_id=oauth2_session_id,
     )
     session.add(fed_session)
@@ -77,7 +73,7 @@ async def initiate_federation(
     redirect_url = f"{provider.authorization_endpoint}?{urlencode(params)}"
     logger.info(
         "Federation initiated: %s -> %s for %s",
-        identity_email, provider_id, requested_scope_names,
+        identity_email, provider_id
     )
     return RedirectResponse(url=redirect_url, status_code=302)
 
@@ -200,6 +196,7 @@ async def federation_callback(
         raise HTTPException(status_code=502, detail="Failed to exchange code with upstream provider")
 
     token_data = token_response.json()
+    id_token = token_data.get("id_token")
     access_token = token_data.get("access_token")
     refresh_token = token_data.get("refresh_token")
     expires_in = token_data.get("expires_in")
@@ -208,6 +205,23 @@ async def federation_callback(
 
     if not access_token:
         raise HTTPException(status_code=502, detail="No access token in upstream response")
+
+    # Verify id_token and extract sub claim
+    subject = None
+    if id_token and provider.jwks_uri:
+        try:
+            jwks_client = pyjwt.PyJWKClient(provider.jwks_uri)
+            signing_key = jwks_client.get_signing_key_from_jwt(id_token)
+            decoded = pyjwt.decode(
+                id_token,
+                signing_key.key,
+                algorithms=["RS256", "RS384", "RS512", "ES256", "ES384", "ES512", "EdDSA"],
+                options={"verify_aud": False},
+            )
+            subject = decoded.get("sub")
+        except pyjwt.exceptions.PyJWTError as e:
+            logger.error("Failed to verify id_token from %s: %s", provider_id, e)
+            raise HTTPException(status_code=502, detail="Failed to verify id_token from upstream provider")
 
     expires_at = None
     if expires_in:
@@ -223,6 +237,7 @@ async def federation_callback(
         token_type=token_type,
         expires_at=expires_at,
         scopes_granted=scope_str.split() if scope_str else [],
+        subject=subject,
     )
 
     logger.info(
@@ -263,6 +278,20 @@ async def federation_callback(
             )
 
     return JSONResponse({"detail": "Federation complete", "provider": provider_id})
+
+
+@router.get("/providers", dependencies=[Depends(authenticate_user)])
+async def list_user_providers(
+    request: Request,
+    session: Session = Depends(get_session),
+):
+    """List external providers the user has linked tokens for."""
+    identity_email = request.state.identity.email
+    tokens = ExternalToken.get_all_for_user(session, identity_email)
+    return [
+        {"provider_id": t.provider_id, "subject": t.subject}
+        for t in tokens
+    ]
 
 
 @router.get("/tokens", dependencies=[Depends(authenticate_user)])
@@ -365,4 +394,5 @@ async def _refresh_external_token(
         token_type=token_data.get("token_type", "Bearer"),
         expires_at=expires_at,
         scopes_granted=ext_token.scopes_granted,
+        subject=ext_token.subject,
     )
