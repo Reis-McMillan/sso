@@ -19,7 +19,11 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    op.add_column('oauth2_session', sa.Column('csrf_token', sa.String, nullable=True))
+    conn = op.get_bind()
+    inspector = sa.inspect(conn)
+    columns = [c['name'] for c in inspector.get_columns('oauth2_session')]
+    if 'csrf_token' not in columns:
+        op.add_column('oauth2_session', sa.Column('csrf_token', sa.String, nullable=True))
 
 
 def downgrade() -> None:

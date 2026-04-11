@@ -3,7 +3,7 @@ from datetime import datetime, timedelta, timezone
 from urllib.parse import urlencode
 
 import httpx
-import jwt as pyjwt  # noqa: F811
+
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, RedirectResponse
 from sqlmodel import Session
@@ -31,13 +31,14 @@ async def initiate_federation(
     request: Request,
     provider_id: str = Query(...),
     oauth2_session_id: str | None = Query(None),
+    redirect_uri: str | None = Query(None),
     session: Session = Depends(get_session),
 ):
     """Start upstream OAuth2 flow with an external provider."""
     identity = get_browser_identity(request, session)
     if not identity:
         raise HTTPException(status_code=401, detail="Not authenticated")
-    identity_email = identity.email
+    identity_id = identity.id
 
     provider = ExternalProvider.get_by_provider_id(session, provider_id)
     if not provider or not provider.enabled:
@@ -50,9 +51,10 @@ async def initiate_federation(
 
     # Create federation session to track the flow
     fed_session = FederationSession(
-        identity_email=identity_email,
+        identity_id=identity_id,
         provider_id=provider_id,
         oauth2_session_id=oauth2_session_id,
+        redirect_uri=redirect_uri,
     )
     session.add(fed_session)
     session.commit()
@@ -72,8 +74,8 @@ async def initiate_federation(
 
     redirect_url = f"{provider.authorization_endpoint}?{urlencode(params)}"
     logger.info(
-        "Federation initiated: %s -> %s for %s",
-        identity_email, provider_id
+        "Federation initiated: identity %s -> %s",
+        identity_id, provider_id,
     )
     return RedirectResponse(url=redirect_url, status_code=302)
 
@@ -100,14 +102,15 @@ async def federation_callback(
     # Handle error from upstream provider (user cancelled, no account, etc.)
     if error is not None:
         logger.warning(
-            "Federation error from %s for %s: %s - %s",
-            provider_id, fed_session.identity_email, error, error_description,
+            "Federation error from %s for identity %s: %s - %s",
+            provider_id, fed_session.identity_id, error, error_description,
         )
 
         # Capture fields before deleting the session
-        identity_email = fed_session.identity_email
+        identity_id = fed_session.identity_id
         failed_scope_names = list(fed_session.scopes_requested)
         oauth2_session_id = fed_session.oauth2_session_id
+        client_redirect_uri = fed_session.redirect_uri
 
         session.delete(fed_session)
         session.commit()
@@ -116,7 +119,7 @@ async def federation_callback(
         if oauth2_session_id:
             oauth2_sess = OAuth2Session.get_by_session_id(session, oauth2_session_id)
             if oauth2_sess and not oauth2_sess.is_expired():
-                identity = Identity.get(session, identity_email)
+                identity = Identity.get_by_id(session, identity_id)
                 client = OAuthClient.get_by_client_id(session, oauth2_sess.client_id)
 
                 if identity and client:
@@ -150,12 +153,15 @@ async def federation_callback(
                         params["state"] = state_param
 
                     logger.info(
-                        "Federation failed for %s, issuing auth code with reduced scopes: %s",
-                        identity_email, granted_scopes,
+                        "Federation failed for identity %s, issuing auth code with reduced scopes: %s",
+                        identity_id, granted_scopes,
                     )
                     return RedirectResponse(
                         url=f"{redirect_uri}?{urlencode(params)}", status_code=302
                     )
+
+        if client_redirect_uri:
+            return RedirectResponse(url=client_redirect_uri, status_code=302)
 
         return JSONResponse(
             status_code=400,
@@ -190,8 +196,8 @@ async def federation_callback(
 
     if token_response.status_code != 200:
         logger.error(
-            "Token exchange failed for %s with %s: %s",
-            fed_session.identity_email, provider_id, token_response.text,
+            "Token exchange failed for identity %s with %s: %s",
+            fed_session.identity_id, provider_id, token_response.text,
         )
         raise HTTPException(status_code=502, detail="Failed to exchange code with upstream provider")
 
@@ -206,22 +212,26 @@ async def federation_callback(
     if not access_token:
         raise HTTPException(status_code=502, detail="No access token in upstream response")
 
-    # Verify id_token and extract sub claim
-    subject = None
-    if id_token and provider.jwks_uri:
-        try:
-            jwks_client = pyjwt.PyJWKClient(provider.jwks_uri)
-            signing_key = jwks_client.get_signing_key_from_jwt(id_token)
-            decoded = pyjwt.decode(
-                id_token,
-                signing_key.key,
-                algorithms=["RS256", "RS384", "RS512", "ES256", "ES384", "ES512", "EdDSA"],
-                options={"verify_aud": False},
-            )
-            subject = decoded.get("sub")
-        except pyjwt.exceptions.PyJWTError as e:
-            logger.error("Failed to verify id_token from %s: %s", provider_id, e)
-            raise HTTPException(status_code=502, detail="Failed to verify id_token from upstream provider")
+    # Fetch subject from provider's userinfo endpoint
+    if not provider.userinfo_endpoint:
+        raise HTTPException(status_code=502, detail="Provider has no userinfo endpoint configured")
+
+    async with httpx.AsyncClient() as userinfo_client:
+        userinfo_response = await userinfo_client.get(
+            provider.userinfo_endpoint,
+            headers={"Authorization": f"Bearer {access_token}"},
+        )
+
+    if userinfo_response.status_code != 200:
+        logger.error(
+            "Userinfo request failed for identity %s from %s: %s",
+            fed_session.identity_id, provider_id, userinfo_response.text,
+        )
+        raise HTTPException(status_code=502, detail="Failed to fetch userinfo from upstream provider")
+
+    subject = userinfo_response.json().get("sub")
+    if not subject:
+        raise HTTPException(status_code=502, detail="Userinfo response missing sub claim")
 
     expires_at = None
     if expires_in:
@@ -230,7 +240,7 @@ async def federation_callback(
     # Store tokens
     ExternalToken.upsert(
         session,
-        identity_email=fed_session.identity_email,
+        identity_id=fed_session.identity_id,
         provider_id=provider_id,
         access_token=access_token,
         refresh_token=refresh_token,
@@ -241,12 +251,13 @@ async def federation_callback(
     )
 
     logger.info(
-        "External tokens stored for %s from %s",
-        fed_session.identity_email, provider_id,
+        "External tokens stored for identity %s from %s",
+        fed_session.identity_id, provider_id,
     )
 
     # Clean up federation session
     oauth2_session_id = fed_session.oauth2_session_id
+    client_redirect_uri = fed_session.redirect_uri
     session.delete(fed_session)
     session.commit()
 
@@ -270,12 +281,15 @@ async def federation_callback(
                 params["code_challenge_method"] = oauth2_sess.code_challenge_method
 
             logger.info(
-                "Federation complete, resuming OAuth2 flow for %s",
-                fed_session.identity_email,
+                "Federation complete, resuming OAuth2 flow for identity %s",
+                fed_session.identity_id,
             )
             return RedirectResponse(
                 url=f"/authorize?{urlencode(params)}", status_code=302
             )
+
+    if client_redirect_uri:
+        return RedirectResponse(url=client_redirect_uri, status_code=302)
 
     return JSONResponse({"detail": "Federation complete", "provider": provider_id})
 
@@ -286,8 +300,8 @@ async def list_user_providers(
     session: Session = Depends(get_session),
 ):
     """List external providers the user has linked tokens for."""
-    identity_email = request.state.identity.email
-    tokens = ExternalToken.get_all_for_user(session, identity_email)
+    identity_id = request.state.identity.id
+    tokens = ExternalToken.get_all_for_user(session, identity_id)
     return [
         {"provider_id": t.provider_id, "subject": t.subject}
         for t in tokens
@@ -298,6 +312,7 @@ async def list_user_providers(
 async def get_external_tokens(
     request: Request,
     provider_id: str = Query(...),
+    subject: str = Query(...),
     session: Session = Depends(get_session),
 ):
     """Serve external access tokens to downstream clients.
@@ -305,10 +320,10 @@ async def get_external_tokens(
     Requires a valid Bearer JWT. Returns only the access token, never the refresh token.
     Automatically refreshes expired tokens if a refresh token is available.
     """
-    identity_email = request.state.identity.email
+    identity_id = request.state.identity.id
 
     # Look up external token
-    ext_token = ExternalToken.get(session, identity_email, provider_id)
+    ext_token = ExternalToken.get(session, identity_id, provider_id, subject)
     if not ext_token:
         raise HTTPException(status_code=404, detail="No external token found for this provider")
 
@@ -367,8 +382,8 @@ async def _refresh_external_token(
 
     if response.status_code != 200:
         logger.error(
-            "External token refresh failed for %s from %s: %s",
-            ext_token.identity_email, ext_token.provider_id, response.text,
+            "External token refresh failed for identity %s from %s: %s",
+            ext_token.identity_id, ext_token.provider_id, response.text,
         )
         return None
 
@@ -387,7 +402,7 @@ async def _refresh_external_token(
 
     return ExternalToken.upsert(
         session,
-        identity_email=ext_token.identity_email,
+        identity_id=ext_token.identity_id,
         provider_id=ext_token.provider_id,
         access_token=new_access_token,
         refresh_token=new_refresh_token,
@@ -396,3 +411,8 @@ async def _refresh_external_token(
         scopes_granted=ext_token.scopes_granted,
         subject=ext_token.subject,
     )
+
+# to-do implement route to delete token
+@router.delete('{}')
+async def delete_external_token():
+    pass

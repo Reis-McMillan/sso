@@ -16,14 +16,18 @@ def test_new(session):
     expires = datetime.now(timezone.utc) + timedelta(seconds=config.AUTHENTICATION_TTL)
     Identity.new(
         session,
+        'Bob',
+        'Jones',
         'Bob72@example.com',
         auth_key,
-        expires
+        expires,
     )
 
     res = Identity.get(session, 'bob72@example.com')
     assert isinstance(res.id, int) == True
     assert res.email == 'bob72@example.com'
+    assert res.first_name == 'Bob'
+    assert res.last_name == 'Jones'
     assert res.auth_key == auth_key
     assert res.expires == expires
     assert res.origination <= datetime.now(timezone.utc)
@@ -35,9 +39,11 @@ def test_duplicate(session):
     with pytest.raises(IntegrityError):
         Identity.new(
             session,
+            'Bob',
+            'Jones',
             'bob72@example.com',
             Identity.make_auth_key(),
-            datetime.now(timezone.utc)
+            datetime.now(timezone.utc),
         )
     session.rollback()
 
@@ -46,9 +52,11 @@ def test_not_email(session):
     with pytest.raises(ValidationError):
         Identity.new(
             session,
+            'Bob',
+            'Jones',
             'not an email',
             Identity.make_auth_key(),
-            datetime.now(timezone.utc)
+            datetime.now(timezone.utc),
         )
 
 

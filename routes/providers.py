@@ -60,6 +60,7 @@ async def create_provider(
         jwks_uri = discovery.get("jwks_uri")
         if not jwks_uri:
             raise HTTPException(status_code=400, detail="OIDC discovery document missing jwks_uri")
+        userinfo_endpoint = discovery.get("userinfo_endpoint")
     except httpx.RequestError as e:
         raise HTTPException(status_code=400, detail=f"Failed to reach discovery URL: {e}")
 
@@ -71,6 +72,7 @@ async def create_provider(
         authorization_endpoint=body.authorization_endpoint,
         token_endpoint=body.token_endpoint,
         jwks_uri=jwks_uri,
+        userinfo_endpoint=userinfo_endpoint,
         scopes=body.scopes,
     )
     session.add(provider)
@@ -85,6 +87,7 @@ async def create_provider(
         "authorization_endpoint": provider.authorization_endpoint,
         "token_endpoint": provider.token_endpoint,
         "jwks_uri": provider.jwks_uri,
+        "userinfo_endpoint": provider.userinfo_endpoint,
         "scopes": provider.scopes,
         "enabled": provider.enabled,
         "created_at": provider.created_at.isoformat() if provider.created_at else None,
@@ -103,6 +106,8 @@ async def list_providers(
             "client_id": p.client_id,
             "authorization_endpoint": p.authorization_endpoint,
             "token_endpoint": p.token_endpoint,
+            "jwks_uri": p.jwks_uri,
+            "userinfo_endpoint": p.userinfo_endpoint,
             "scopes": p.scopes,
             "enabled": p.enabled,
             "created_at": p.created_at.isoformat() if p.created_at else None,
@@ -127,6 +132,7 @@ async def get_provider(
         "authorization_endpoint": provider.authorization_endpoint,
         "token_endpoint": provider.token_endpoint,
         "jwks_uri": provider.jwks_uri,
+        "userinfo_endpoint": provider.userinfo_endpoint,
         "scopes": provider.scopes,
         "enabled": provider.enabled,
         "created_at": provider.created_at.isoformat() if provider.created_at else None,

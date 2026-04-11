@@ -49,10 +49,12 @@ def test_jwt_auth_missing_sub_claim(client):
     assert res.json()['detail'] == 'Not authenticated'
 
 
-def test_jwt_auth_expired_signature(client):
+def test_jwt_auth_expired_signature(session, client):
+    from models import Identity
+    admin = Identity.get(session, 'admin@mcmlln.dev')
     now = datetime.now(timezone.utc)
     payload = {
-        'sub': 'admin@mcmlln.dev',
+        'sub': str(admin.id),
         'roles': ['admin'],
         'iat': now - timedelta(minutes=10),
         'exp': now - timedelta(minutes=5)

@@ -16,7 +16,7 @@ class RefreshToken(SQLModel, table=True):
         index=True,
     )
     client_id: str = Field()
-    identity_email: str = Field()
+    identity_id: int = Field()
     scopes: List[str] = Field(
         default_factory=list,
         sa_column=Column(ARRAY(String)),
@@ -46,10 +46,10 @@ class RefreshToken(SQLModel, table=True):
 
     @classmethod
     def revoke_all_for_user_client(
-        cls, session: Session, identity_email: str, client_id: str
+        cls, session: Session, identity_id: int, client_id: str
     ):
         statement = select(cls).where(
-            cls.identity_email == identity_email,
+            cls.identity_id == identity_id,
             cls.client_id == client_id,
             cls.revoked == False,
         )

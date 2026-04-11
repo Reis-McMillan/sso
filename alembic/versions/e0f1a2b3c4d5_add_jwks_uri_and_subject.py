@@ -19,25 +19,35 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
+    conn = op.get_bind()
+    inspector = sa.inspect(conn)
+
     # Add jwks_uri to external_provider
-    op.add_column(
-        'external_provider',
-        sa.Column('jwks_uri', sa.String, nullable=True),
-    )
+    ep_columns = [c['name'] for c in inspector.get_columns('external_provider')]
+    if 'jwks_uri' not in ep_columns:
+        op.add_column(
+            'external_provider',
+            sa.Column('jwks_uri', sa.String, nullable=True),
+        )
 
     # Add subject to external_token
-    op.add_column(
-        'external_token',
-        sa.Column('subject', sa.String, nullable=True),
-    )
+    et_columns = [c['name'] for c in inspector.get_columns('external_token')]
+    if 'subject' not in et_columns:
+        op.add_column(
+            'external_token',
+            sa.Column('subject', sa.String, nullable=True),
+        )
 
     # Drop old uniqueness constraint and create new one
-    op.drop_constraint('uq_external_token_user_provider', 'external_token', type_='unique')
-    op.create_unique_constraint(
-        'uq_external_token_user_subject_provider',
-        'external_token',
-        ['identity_email', 'subject', 'provider_id'],
-    )
+    constraints = [c['name'] for c in inspector.get_unique_constraints('external_token')]
+    if 'uq_external_token_user_provider' in constraints:
+        op.drop_constraint('uq_external_token_user_provider', 'external_token', type_='unique')
+    if 'uq_external_token_user_subject_provider' not in constraints:
+        op.create_unique_constraint(
+            'uq_external_token_user_subject_provider',
+            'external_token',
+            ['identity_email', 'subject', 'provider_id'],
+        )
 
 
 def downgrade() -> None:

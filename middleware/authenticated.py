@@ -1,9 +1,12 @@
 import logging
-from types import SimpleNamespace
 from fastapi import Request, HTTPException, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 import jwt
+from sqlmodel import Session
 
+from database import get_session
+from models.identity import Identity
+from config import config
 from utils.jwt import get_public_key_pem
 
 logger = logging.getLogger("verys.auth")
@@ -11,7 +14,11 @@ logger = logging.getLogger("verys.auth")
 security = HTTPBearer(auto_error=False)
 
 
-def try_authenticate(request: Request, credentials: HTTPAuthorizationCredentials | None) -> SimpleNamespace | None:
+def try_authenticate(
+    request: Request,
+    credentials: HTTPAuthorizationCredentials | None,
+    session: Session,
+) -> Identity | None:
     """Try to authenticate from Bearer token. Returns None if not authenticated."""
     if not credentials:
         return None
@@ -23,19 +30,28 @@ def try_authenticate(request: Request, credentials: HTTPAuthorizationCredentials
             jwt_token,
             public_key_pem,
             algorithms=["EdDSA"],
-            options={"verify_aud": False},
+            audience=config.ISSUER,
         )
 
-        email = decoded.get("sub")
-        roles = decoded.get("roles", [])
-
-        if not email:
+        sub = decoded.get("sub")
+        if not sub:
             logger.warning("Auth failed: JWT missing 'sub' claim")
             return None
 
-        identity = SimpleNamespace(email=email, roles=roles)
+        try:
+            identity_id = int(sub)
+        except (TypeError, ValueError):
+            logger.warning("Auth failed: 'sub' claim is not a valid identity id: %s", sub)
+            return None
+
+        identity = Identity.get_by_id(session, identity_id)
+        if not identity:
+            logger.warning("Auth failed: no identity for id %s", identity_id)
+            return None
+
         request.state.identity = identity
-        logger.info("Authenticated %s via JWT", email)
+        request.state.token_scopes = decoded.get("scopes", [])
+        logger.info("Authenticated %s via JWT", identity.email)
         return identity
 
     except jwt.ExpiredSignatureError:
@@ -49,9 +65,10 @@ def try_authenticate(request: Request, credentials: HTTPAuthorizationCredentials
 async def authenticate_user(
     request: Request,
     credentials: HTTPAuthorizationCredentials | None = Depends(security),
-) -> SimpleNamespace:
+    session: Session = Depends(get_session),
+) -> Identity:
     """FastAPI dependency that requires a valid Bearer token."""
-    identity = try_authenticate(request, credentials)
+    identity = try_authenticate(request, credentials, session)
     if not identity:
         raise HTTPException(status_code=401, detail="Not authenticated")
     return identity

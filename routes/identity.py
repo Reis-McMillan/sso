@@ -31,6 +31,8 @@ async def get_all_identities(
 @router.post("/", status_code=201)
 async def create_identity(
     email: str,
+    first_name: str = "",
+    last_name: str = "",
     expires: Optional[datetime] = None,
     request: Request = None,
     session: Session = Depends(get_session),
@@ -44,7 +46,7 @@ async def create_identity(
 
     key = Identity.make_auth_key()
     try:
-        new_id = Identity.new(session, email, key, expires)
+        new_id = Identity.new(session, first_name, last_name, email, key, expires)
     except IntegrityError as e:
         logger.warning("Identity creation failed: duplicate email %s", email)
         raise HTTPException(status_code=400)

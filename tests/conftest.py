@@ -11,8 +11,9 @@ from utils.jwt import create_signed_jwt
 
 
 @pytest.fixture(scope="module")
-def admin_jwt():
-    return create_signed_jwt('admin@mcmlln.dev', ['admin'])
+def admin_jwt(session):
+    admin = Identity.get(session, 'admin@mcmlln.dev')
+    return create_signed_jwt(admin, ['openid'])
 
 
 @pytest.fixture(scope="module")
@@ -36,18 +37,28 @@ def session():
 
     session = next(get_session())
 
-    Identity.new(
+    admin = Identity.new(
         session,
+        'Admin',
+        'User',
         'admin@mcmlln.dev',
         'paris_people',
-        datetime.now(timezone.utc) + timedelta(days=30)
+        datetime.now(timezone.utc) + timedelta(days=30),
     )
-    Identity.new(
+    admin.email_verified = True
+    session.add(admin)
+    service = Identity.new(
         session,
+        'Service',
+        'Account',
         'service@mcmlln.dev',
         'jd vance erika kirk baby',
-        datetime.now(timezone.utc) + timedelta(days=30)
+        datetime.now(timezone.utc) + timedelta(days=30),
     )
+    service.email_verified = True
+    session.add(service)
+    session.commit()
+
     Identity.update(
         session,
         'admin@mcmlln.dev',

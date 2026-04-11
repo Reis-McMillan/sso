@@ -6,6 +6,23 @@ from models import Identity
 from utils.jwt import create_signed_jwt
 
 
+def _ensure_identity(session, email, roles=None):
+    """Fetch or create a non-admin identity for JWT tests."""
+    identity = Identity.get(session, email)
+    if identity is None:
+        identity = Identity.new(
+            session,
+            'Test',
+            'User',
+            email,
+            Identity.make_auth_key(),
+            datetime.now(timezone.utc) + timedelta(days=30),
+        )
+    if roles is not None:
+        identity = Identity.update(session, email, new_roles=roles)
+    return identity
+
+
 def test_all(admin_jwt, client):
     res = client.get(
         '/identity',
@@ -16,13 +33,15 @@ def test_all(admin_jwt, client):
 
 
 def test_all_no_admin(client, session):
-    Identity.new(
+    identity = Identity.new(
         session,
+        'Abella',
+        'Danger',
         'abella.danger@pornhub.com',
         'missionary',
-        datetime.now(timezone.utc) + timedelta(days=1)
+        datetime.now(timezone.utc) + timedelta(days=1),
     )
-    jwt = create_signed_jwt('abella.danger@pornhub.com', ['default'])
+    jwt = create_signed_jwt(identity, ['openid'])
     res = client.get(
         '/identity',
         headers={'Authorization': f'Bearer {jwt}'}
@@ -65,7 +84,7 @@ def test_create_with_expires(admin_jwt, client):
 
 def test_create_no_admin(client, session):
     id = Identity.get(session, 'stewie.griffin@quahog.com')
-    jwt = create_signed_jwt(id.email, id.roles)
+    jwt = create_signed_jwt(id, ['openid'])
     res = client.post(
         '/identity',
         headers={'Authorization': f'Bearer {jwt}'},
@@ -99,10 +118,10 @@ def test_get_not_found(admin_jwt, client):
     assert res.json()['detail'] == 'Identity not found'
 
 
-def test_get_not_admin(client):
+def test_get_not_admin(client, session):
     """Test that admin can request their own identity as a JWT"""
     email = quote('admin@mcmlln.dev')
-    jwt = create_signed_jwt('jeevacation@gmail.com', roles=['default'])
+    jwt = create_signed_jwt(_ensure_identity(session, 'jeevacation@gmail.com'), ['openid'])
     res = client.get(
         f'/identity/{email}',
         headers={'Authorization': f'Bearer {jwt}'},
@@ -124,7 +143,7 @@ def test_update(admin_jwt, client):
 
 
 def test_update_no_admin(client, session):
-    jwt = create_signed_jwt('jeevacation@gmail.com', roles=['default'])
+    jwt = create_signed_jwt(_ensure_identity(session, 'jeevacation@gmail.com'), ['openid'])
     email = quote('stewie.griffin@quahog.com')
     expires = (datetime.now(timezone.utc) + timedelta(days=30)).isoformat()
     res = client.put(
@@ -180,7 +199,7 @@ def test_delete_no_id(admin_jwt, client):
 
 
 def test_delete_not_admin(client, session):
-    jwt = create_signed_jwt('jeevacation@gmail.com', roles=['default'])
+    jwt = create_signed_jwt(_ensure_identity(session, 'jeevacation@gmail.com'), ['openid'])
     email = quote('peter.griffin@quahog.com')
     res = client.delete(
         f'/identity/{email}',
@@ -193,7 +212,7 @@ def test_delete_not_admin(client, session):
 def test_logout(client, session):
     id = Identity.get(session, 'stewie.griffin@quahog.com')
     old_auth_key = id.auth_key
-    jwt = create_signed_jwt('stewie.griffin@quahog.com', ['default'])
+    jwt = create_signed_jwt(id, ['openid'])
     res = client.post(
         '/identity/logout',
         headers={'Authorization': f'Bearer {jwt}'},
@@ -224,7 +243,7 @@ def test_admin_logout_no_id(admin_jwt, client):
 
 
 def test_logout_not_admin(client, session):
-    jwt = create_signed_jwt('jeevacation@gmail.com', ['default'])
+    jwt = create_signed_jwt(_ensure_identity(session, 'jeevacation@gmail.com'), ['openid'])
     email = quote('stewie.griffin@quahog.com')
     res = client.post(
         f'/identity/{email}/logout',

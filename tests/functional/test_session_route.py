@@ -1,6 +1,7 @@
 import base64
 from datetime import datetime, timedelta, timezone
 
+from models.identity import Identity
 from models.oauth2_client import OAuthClient
 from models.refresh_token import RefreshToken
 from utils.client_auth import hash_client_secret
@@ -28,6 +29,7 @@ def test_end_session_clears_cookies(session, client):
 
 
 def test_end_session_with_id_token_hint(session, client):
+    admin = Identity.get(session, "admin@mcmlln.dev")
     oa = OAuthClient(
         client_name="Session Test App",
         redirect_uris=["https://session.example.com/callback"],
@@ -41,7 +43,7 @@ def test_end_session_with_id_token_hint(session, client):
     # Create a refresh token for this user+client
     rt = RefreshToken(
         client_id=oa.client_id,
-        identity_email="admin@mcmlln.dev",
+        identity_id=admin.id,
         scopes=["openid"],
         expires_at=datetime.now(timezone.utc) + timedelta(days=30),
     )
@@ -51,8 +53,10 @@ def test_end_session_with_id_token_hint(session, client):
 
     # Create id_token_hint
     id_token = create_id_token(
-        email="admin@mcmlln.dev",
+        session=session,
+        identity=admin,
         client_id=oa.client_id,
+        client_scopes=["openid"],
         nonce=None,
         auth_time=datetime.now(timezone.utc),
     )
@@ -71,6 +75,7 @@ def test_end_session_with_id_token_hint(session, client):
 
 
 def test_end_session_with_redirect(session, client):
+    admin = Identity.get(session, "admin@mcmlln.dev")
     oa = OAuthClient(
         client_name="Redirect Session App",
         redirect_uris=["https://session-redirect.example.com/callback"],
@@ -82,8 +87,10 @@ def test_end_session_with_redirect(session, client):
     session.refresh(oa)
 
     id_token = create_id_token(
-        email="admin@mcmlln.dev",
+        session=session,
+        identity=admin,
         client_id=oa.client_id,
+        client_scopes=["openid"],
         nonce=None,
         auth_time=datetime.now(timezone.utc),
     )
@@ -103,6 +110,7 @@ def test_end_session_with_redirect(session, client):
 
 
 def test_end_session_redirect_invalid_uri(session, client):
+    admin = Identity.get(session, "admin@mcmlln.dev")
     oa = OAuthClient(
         client_name="Invalid Redirect Session App",
         redirect_uris=["https://valid.example.com/callback"],
@@ -114,8 +122,10 @@ def test_end_session_redirect_invalid_uri(session, client):
     session.refresh(oa)
 
     id_token = create_id_token(
-        email="admin@mcmlln.dev",
+        session=session,
+        identity=admin,
         client_id=oa.client_id,
+        client_scopes=["openid"],
         nonce=None,
         auth_time=datetime.now(timezone.utc),
     )
@@ -141,9 +151,10 @@ def test_end_session_no_params(client):
 
 
 def test_token_revoke(session, client):
+    admin = Identity.get(session, "admin@mcmlln.dev")
     rt = RefreshToken(
         client_id="revoke-route-client",
-        identity_email="admin@mcmlln.dev",
+        identity_id=admin.id,
         scopes=["openid"],
         expires_at=datetime.now(timezone.utc) + timedelta(days=30),
     )

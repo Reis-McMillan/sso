@@ -1,12 +1,14 @@
 import base64
 import hashlib
 import json
-
+from sqlmodel import Session
 import jwt
 from datetime import datetime, timedelta, timezone
 from cryptography.hazmat.primitives.serialization import load_pem_private_key, Encoding, PublicFormat
 
 from config import config
+from models import Scope, ExternalToken
+from models.identity import Identity
 
 _private_key = None
 _kid = None
@@ -55,15 +57,20 @@ def _compute_at_hash(access_token: str) -> str:
     return base64.urlsafe_b64encode(left_half).rstrip(b"=").decode()
 
 
-def create_signed_jwt(email: str, roles: list[str], audience: str = None) -> str:
+def create_signed_jwt(
+    identity: Identity,
+    scopes: list[str],
+    audience: str = None,
+) -> str:
     now = datetime.now(timezone.utc)
     payload = {
         "iss": config.ISSUER,
-        "sub": email,
+        "sub": str(identity.id),
         "aud": config.ISSUER if not audience else audience,
-        "roles": roles,
+        "roles": [r.value if hasattr(r, "value") else r for r in identity.roles],
         "iat": now,
         "exp": now + timedelta(seconds=config.JWT_EXPIRY),
+        "scopes": scopes,
     }
     return jwt.encode(
         payload,
@@ -74,28 +81,63 @@ def create_signed_jwt(email: str, roles: list[str], audience: str = None) -> str
 
 
 def create_id_token(
-    email: str,
+    session: Session,
+    identity: Identity,
     client_id: str,
+    client_scopes: list[str],
     nonce: str | None,
     auth_time: datetime,
     access_token: str | None = None,
-    roles: list[str] | None = None,
 ) -> str:
     now = datetime.now(timezone.utc)
     payload = {
         "iss": config.ISSUER,
-        "sub": email,
+        "sub": str(identity.id),
         "aud": client_id,
         "exp": now + timedelta(seconds=config.ID_TOKEN_EXPIRY),
         "iat": now,
         "auth_time": int(auth_time.timestamp()),
     }
+
+    scope_set = set(client_scopes)
+
+    if "email" in scope_set:
+        payload["email"] = identity.email
+        payload["email_verified"] = identity.email_verified
+
+    if "profile" in scope_set:
+        payload["given_name"] = identity.first_name
+        payload["family_name"] = identity.last_name
+        payload["name"] = f"{identity.first_name} {identity.last_name}"
+        payload["origination"] = identity.origination.isoformat() if identity.origination else None
+
+    # Provider-backed scopes: collect external token subjects
+    tokens = []
+    provider_ids = set()
+    for s_name in client_scopes:
+        scope = Scope.get_by_name(session, s_name)
+        if scope and scope.provider_id:
+            provider_ids.add(scope.provider_id)
+    for pid in provider_ids:
+        provider_tokens = ExternalToken.get_all_for_user_by_provider(
+            session,
+            identity.id,
+            pid,
+        )
+        tokens.extend([
+            {"provider_id": t.provider_id, "subject": t.subject}
+            for t in provider_tokens
+        ])
+
+    if tokens:
+        payload["tokens"] = tokens
     if nonce:
         payload["nonce"] = nonce
     if access_token:
         payload["at_hash"] = _compute_at_hash(access_token)
-    if roles:
-        payload["roles"] = roles
+    if identity.roles:
+        payload["roles"] = [r.value if hasattr(r, "value") else r for r in identity.roles]
+
     return jwt.encode(
         payload,
         _get_private_key(),

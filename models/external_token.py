@@ -10,13 +10,13 @@ from utils.encryption import encrypt_field, decrypt_field
 class ExternalToken(SQLModel, table=True):
     __tablename__ = "external_token"
     __table_args__ = (
-        UniqueConstraint("identity_email", "subject", "provider_id", name="uq_external_token_user_subject_provider"),
+        UniqueConstraint("identity_id", "subject", "provider_id", name="uq_external_token_user_subject_provider"),
     )
 
     id: int | None = Field(default=None, primary_key=True)
-    identity_email: str = Field(index=True)
+    identity_id: int = Field(index=True)
     provider_id: str = Field(index=True)
-    subject: Optional[str] = Field(default=None)
+    subject: str = Field()
     access_token_encrypted: str = Field()
     refresh_token_encrypted: Optional[str] = Field(default=None)
     token_type: str = Field(default="Bearer")
@@ -64,29 +64,34 @@ class ExternalToken(SQLModel, table=True):
         return datetime.now(timezone.utc) > self.expires_at
 
     @classmethod
-    def get(cls, session: Session, identity_email: str, provider_id: str, subject: Optional[str] = None) -> Optional["ExternalToken"]:
+    def get(
+        cls,
+        session: Session,
+        identity_id: int,
+        provider_id: str,
+        subject: str
+    ) -> Optional["ExternalToken"]:
         statement = select(cls).where(
-            cls.identity_email == identity_email,
+            cls.identity_id == identity_id,
             cls.provider_id == provider_id,
+            cls.subject == subject
         )
-        if subject is not None:
-            statement = statement.where(cls.subject == subject)
         return session.exec(statement).first()
 
     @classmethod
     def upsert(
         cls,
         session: Session,
-        identity_email: str,
+        identity_id: int,
         provider_id: str,
         access_token: str,
         refresh_token: Optional[str],
         token_type: str,
         expires_at: Optional[datetime],
         scopes_granted: List[str],
-        subject: Optional[str] = None,
+        subject: str,
     ) -> "ExternalToken":
-        existing = cls.get(session, identity_email, provider_id, subject=subject)
+        existing = cls.get(session, identity_id, provider_id, subject=subject)
         if existing:
             existing.access_token_encrypted = encrypt_field(access_token)
             if refresh_token:
@@ -101,7 +106,7 @@ class ExternalToken(SQLModel, table=True):
             return existing
 
         token = cls(
-            identity_email=identity_email,
+            identity_id=identity_id,
             provider_id=provider_id,
             subject=subject,
             access_token_encrypted=encrypt_field(access_token),
@@ -116,8 +121,21 @@ class ExternalToken(SQLModel, table=True):
         return token
 
     @classmethod
-    def get_all_for_user(cls, session: Session, identity_email: str) -> list["ExternalToken"]:
-        statement = select(cls).where(cls.identity_email == identity_email)
+    def get_all_for_user(cls, session: Session, identity_id: int) -> list["ExternalToken"]:
+        statement = select(cls).where(cls.identity_id == identity_id)
+        return list(session.exec(statement).all())
+
+    @classmethod
+    def get_all_for_user_by_provider(
+        cls,
+        session: Session,
+        identity_id: int,
+        provider_id: str
+    ) -> list["ExternalToken"]:
+        statement = select(cls).where(
+            cls.identity_id == identity_id,
+            cls.provider_id == provider_id,
+        )
         return list(session.exec(statement).all())
 
     @classmethod

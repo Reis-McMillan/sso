@@ -19,14 +19,22 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
+    conn = op.get_bind()
+    inspector = sa.inspect(conn)
+
     # Add scopes column to external_provider
-    op.add_column(
-        'external_provider',
-        sa.Column('scopes', sa.ARRAY(sa.String), nullable=True),
-    )
+    ep_columns = [c['name'] for c in inspector.get_columns('external_provider')]
+    if 'scopes' not in ep_columns:
+        op.add_column(
+            'external_provider',
+            sa.Column('scopes', sa.ARRAY(sa.String), nullable=True),
+        )
 
     # Migrate data: aggregate provider_scopes from scope table into external_provider
-    conn = op.get_bind()
+    scope_columns = [c['name'] for c in inspector.get_columns('scope')]
+    if 'provider_scopes' not in scope_columns:
+        return  # Already migrated
+
     rows = conn.execute(sa.text(
         "SELECT DISTINCT provider_id FROM scope WHERE provider_id IS NOT NULL"
     )).fetchall()

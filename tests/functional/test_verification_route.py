@@ -5,7 +5,20 @@ from config import config
 from models import Verification, Identity
 
 
+def _register(session, email: str):
+    """Pre-create an Identity the way /register would have."""
+    return Identity.new(
+        session,
+        'Test',
+        'User',
+        email,
+        Identity.make_auth_key(),
+        datetime.now(timezone.utc) + timedelta(days=30),
+    )
+
+
 def test_request_verification(client, session):
+    _register(session, 'newuser@example.com')
     with patch('routes.verification.aiosmtplib.send', new_callable=AsyncMock):
         res = client.post(
             '/verification/',
@@ -15,6 +28,7 @@ def test_request_verification(client, session):
 
 
 def test_request_verification_creates_entry(client, session):
+    _register(session, 'entrycheck@example.com')
     with patch('routes.verification.aiosmtplib.send', new_callable=AsyncMock):
         client.post(
             '/verification/',
@@ -32,6 +46,7 @@ def test_request_verification_creates_entry(client, session):
 
 
 def test_verify_valid_code(client, session):
+    _register(session, 'verifytest@example.com')
     code = Verification.make_code()
     Verification.make_entry(session, 'verifytest@example.com', code)
 
@@ -44,21 +59,21 @@ def test_verify_valid_code(client, session):
     assert f"{config.ENCRYPT_COOKIE_NAME}_iv" in res.cookies
 
 
-def test_verify_creates_identity(client, session):
+def test_verify_marks_email_verified(client, session):
     session.expire_all()
     identity = Identity.get(session, 'verifytest@example.com')
     assert identity is not None
     assert identity.email == 'verifytest@example.com'
+    assert identity.email_verified is True
 
 
-def test_verify_updates_existing_identity(client, session):
-    old_key = Identity.make_auth_key()
-    Identity.new(
-        session,
-        'existinguser@example.com',
-        old_key,
-        datetime.now(timezone.utc) - timedelta(days=1)
-    )
+def test_verify_refreshes_expired_identity(client, session):
+    # Pre-create an identity whose session key has expired
+    identity = _register(session, 'existinguser@example.com')
+    old_key = identity.auth_key
+    identity.expires = datetime.now(timezone.utc) - timedelta(days=1)
+    session.add(identity)
+    session.commit()
 
     code = Verification.make_code()
     Verification.make_entry(session, 'existinguser@example.com', code)
@@ -73,9 +88,11 @@ def test_verify_updates_existing_identity(client, session):
     session.expire_all()
     identity = Identity.get(session, 'existinguser@example.com')
     assert identity.auth_key != old_key
+    assert identity.email_verified is True
 
 
 def test_verify_invalid_code(client, session):
+    _register(session, 'invalidcode@example.com')
     code = Verification.make_code()
     Verification.make_entry(session, 'invalidcode@example.com', code)
 
@@ -88,6 +105,7 @@ def test_verify_invalid_code(client, session):
 
 
 def test_verify_expired_code(client, session):
+    _register(session, 'expiredcode@example.com')
     code = Verification.make_code()
     entry = Verification.make_entry(session, 'expiredcode@example.com', code)
     entry.when = datetime.now(timezone.utc) - timedelta(hours=1)
@@ -119,6 +137,7 @@ def test_verify_non_numeric_code(client):
 
 
 def test_email_send_failure(client, session):
+    _register(session, 'fail@example.com')
     with patch('routes.verification.aiosmtplib.send', new_callable=AsyncMock, side_effect=Exception('SMTP error')):
         res = client.post(
             '/verification/',

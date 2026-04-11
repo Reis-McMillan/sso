@@ -38,8 +38,10 @@ def test_create_public_client(admin_jwt, client):
     assert body['is_public'] == True
 
 
-def test_create_client_no_admin(client):
-    jwt = create_signed_jwt('service@mcmlln.dev', ['service-account'])
+def test_create_client_no_admin(client, session):
+    from models import Identity
+    svc = Identity.get(session, 'service@mcmlln.dev')
+    jwt = create_signed_jwt(svc, ['openid'])
     res = client.post(
         '/clients/',
         headers={'Authorization': f'Bearer {jwt}'},
@@ -62,8 +64,10 @@ def test_list_clients(admin_jwt, client):
     assert len(body) >= 2  # created in previous tests
 
 
-def test_list_clients_no_admin(client):
-    jwt = create_signed_jwt('service@mcmlln.dev', ['service-account'])
+def test_list_clients_no_admin(client, session):
+    from models import Identity
+    svc = Identity.get(session, 'service@mcmlln.dev')
+    jwt = create_signed_jwt(svc, ['openid'])
     res = client.get(
         '/clients/',
         headers={'Authorization': f'Bearer {jwt}'},

@@ -22,6 +22,7 @@ class ExternalProvider(SQLModel, table=True):
         sa_column=Column(ARRAY(String)),
     )
     jwks_uri: Optional[str] = Field(default=None)
+    userinfo_endpoint: Optional[str] = Field(default=None)
     enabled: bool = Field(default=True)
     created_at: datetime = Field(
         default_factory=lambda: datetime.now(timezone.utc),

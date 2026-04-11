@@ -1,10 +1,11 @@
 import logging
 import secrets
-
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlmodel import Session
 
+from config import config
 from database import get_session
 from models.oauth2_client import OAuthClient
 from models.scope import Scope
@@ -19,6 +20,7 @@ class ClientCreateRequest(BaseModel):
     client_name: str
     redirect_uris: list[str]
     allowed_scopes: list[str] = ["openid"]
+    prm_uri: str | None = None
     grant_types: list[str] = ["authorization_code", "refresh_token"]
     token_endpoint_auth_method: str = "client_secret_basic"
     is_public: bool = False
@@ -28,9 +30,39 @@ class ClientUpdateRequest(BaseModel):
     client_name: str | None = None
     redirect_uris: list[str] | None = None
     allowed_scopes: list[str] | None = None
+    prm_uri: str | None = None
     grant_types: list[str] | None = None
     token_endpoint_auth_method: str | None = None
     is_public: bool | None = None
+
+
+async def _get_prm_uri(prm_uri: str, client_name: str, session: Session):
+    async with httpx.AsyncClient() as client:
+        response = await client.get(prm_uri)
+        if response.status_code != 200:
+            raise HTTPException(
+                status_code=400,
+                detail="Failed to retrieve OAuth metadata for client."
+            )
+        
+        result: dict = await response.json()
+        if not config.ISSUER in result.get('authorizatoin_servers', []):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Client must list {config.ISSUER} as authorizatoin server."
+            )
+        
+        if result.get('resource_name') != client_name:
+            raise HTTPException(
+                status_code=400,
+                detail="Client name must match OAuth resource name."
+            )
+        
+        required_scopes = result.get('scopes_supported', [])
+        for s in required_scopes:
+            if not Scope.get_by_name(session, s):
+                raise HTTPException(status_code=400, detail=f"Unknown scope '{s}'")
+        return required_scopes
 
 
 @router.post("/", status_code=201)
@@ -47,6 +79,10 @@ async def create_client(
         if not Scope.get_by_name(session, s):
             raise HTTPException(status_code=400, detail=f"Unknown scope '{s}'")
 
+    required_scopes = []
+    if body.prm_uri:
+        required_scopes = _get_prm_uri(body.prm_uri, body.client_name, session)
+
     # Generate client credentials
     plain_secret = secrets.token_urlsafe(48) if not body.is_public else None
 
@@ -54,6 +90,8 @@ async def create_client(
         client_name=body.client_name,
         redirect_uris=body.redirect_uris,
         allowed_scopes=body.allowed_scopes,
+        prm_uri=body.prm_uri,
+        required_scopes=required_scopes,
         grant_types=body.grant_types,
         token_endpoint_auth_method=body.token_endpoint_auth_method,
         is_public=body.is_public,
@@ -95,6 +133,7 @@ async def list_clients(
             "client_name": c.client_name,
             "redirect_uris": c.redirect_uris,
             "allowed_scopes": c.allowed_scopes,
+            "required_scopes": c.required_scopes,
             "is_public": c.is_public,
             "created_at": c.created_at.isoformat() if c.created_at else None,
         }
@@ -120,6 +159,7 @@ async def get_client(
         "client_name": client.client_name,
         "redirect_uris": client.redirect_uris,
         "allowed_scopes": client.allowed_scopes,
+        "required_scopes": client.required_scopes,
         "grant_types": client.grant_types,
         "token_endpoint_auth_method": client.token_endpoint_auth_method,
         "is_public": client.is_public,
@@ -151,6 +191,14 @@ async def update_client(
             if not Scope.get_by_name(session, s):
                 raise HTTPException(status_code=400, detail=f"Unknown scope '{s}'")
         client.allowed_scopes = body.allowed_scopes
+    if body.prm_uri is not None:
+        if body.client_name:
+            client_name = body.client_name
+        else:
+            client_name = client.client_name
+        required_scopes = _get_prm_uri(body.prm_uri, client_name, session)
+        client.prm_uri = body.prm_uri
+        client.required_scopes = required_scopes
     if body.grant_types is not None:
         client.grant_types = body.grant_types
     if body.token_endpoint_auth_method is not None:

@@ -28,7 +28,7 @@ async def end_session(
     session: Session = Depends(get_session),
 ):
     # Try to identify user from id_token_hint
-    identity_email = None
+    identity_id = None
     client_id = None
     if id_token_hint:
         try:
@@ -39,15 +39,20 @@ async def end_session(
                 algorithms=["EdDSA"],
                 options={"verify_aud": False, "verify_exp": False},
             )
-            identity_email = decoded.get("sub")
+            sub = decoded.get("sub")
+            if sub is not None:
+                try:
+                    identity_id = int(sub)
+                except (TypeError, ValueError):
+                    identity_id = None
             client_id = decoded.get("aud")
         except pyjwt.InvalidTokenError:
             pass
 
     # Revoke refresh tokens if we identified the user
-    if identity_email and client_id:
-        RefreshToken.revoke_all_for_user_client(session, identity_email, client_id)
-        logger.info("Revoked refresh tokens for %s (client: %s)", identity_email, client_id)
+    if identity_id and client_id:
+        RefreshToken.revoke_all_for_user_client(session, identity_id, client_id)
+        logger.info("Revoked refresh tokens for identity %s (client: %s)", identity_id, client_id)
 
     # Clear Verys cookies
     response = None
@@ -70,7 +75,7 @@ async def end_session(
     response.delete_cookie(key=config.ENCRYPT_COOKIE_NAME, path="/")
     response.delete_cookie(key=f"{config.ENCRYPT_COOKIE_NAME}_iv", path="/")
 
-    logger.info("Session ended for %s", identity_email or "unknown")
+    logger.info("Session ended for identity %s", identity_id or "unknown")
     return response
 
 
@@ -87,7 +92,7 @@ async def revoke_token(
     rt = RefreshToken.get_by_token(session, token_value)
     if rt:
         rt.revoke(session)
-        logger.info("Token revoked for %s", rt.identity_email)
+        logger.info("Token revoked for identity %s", rt.identity_id)
 
     # Per RFC 7009, always return 200 even if token not found
     return {"active": False}

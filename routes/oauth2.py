@@ -48,7 +48,7 @@ def _build_error_redirect(redirect_uri: str, error: str, description: str, state
 
 
 def _find_missing_federation_provider(
-    session: "Session", identity_email: str, federation_scopes: dict[str, list[str]]
+    session: "Session", identity_id: int, federation_scopes: dict[str, list[str]]
 ) -> str | None:
     """Check if user has valid external tokens for all federation providers.
 
@@ -57,8 +57,8 @@ def _find_missing_federation_provider(
     (the access token can be refreshed later via /federation/tokens).
     """
     for provider_id, scope_names in federation_scopes.items():
-        ext_token = ExternalToken.get(session, identity_email, provider_id)
-        if not ext_token or not ext_token.refresh_token_encrypted:
+        tokens = ExternalToken.get_all_for_user_by_provider(session, identity_id, provider_id)
+        if not tokens or not any(t.refresh_token_encrypted for t in tokens):
             return provider_id
     return None
 
@@ -212,6 +212,10 @@ async def authorize(
         if elapsed > max_age:
             identity = None
 
+    # Unverified users must complete email verification before proceeding.
+    if identity and not identity.email_verified:
+        identity = None
+
     if not identity:
         if "none" in prompt_values:
             return _build_error_redirect(
@@ -249,7 +253,7 @@ async def authorize(
     if has_consent and "consent" not in prompt_values:
         # Check if federation scopes need external tokens before issuing code
         missing_provider = _find_missing_federation_provider(
-            session, identity.email, federation_scopes
+            session, identity.id, federation_scopes
         )
         if missing_provider:
             return _redirect_to_federation(
@@ -367,7 +371,7 @@ async def authorize_consent(
             federation_scopes.setdefault(scope_record.provider_id, []).append(s)
 
     missing_provider = _find_missing_federation_provider(
-        session, identity.email, federation_scopes
+        session, identity.id, federation_scopes
     )
     if missing_provider:
         # Keep the session alive for the federation callback to resume
@@ -498,11 +502,19 @@ async def _handle_authorization_code_grant(
         )
 
     # Validate
+    # Look up identity early (needed for replay handling and token issuance)
+    identity = Identity.get(session, auth_code.identity_email)
+    if not identity:
+        return JSONResponse(
+            status_code=400,
+            content={"error": "invalid_grant", "error_description": "Identity not found"},
+        )
+
     if auth_code.used:
         # Potential replay attack — revoke all tokens for this authorization (RFC 6749 §4.1.2)
         logger.warning("Authorization code replay detected: %s", code)
         RefreshToken.revoke_all_for_user_client(
-            session, auth_code.identity_email, auth_code.client_id
+            session, identity.id, auth_code.client_id
         )
         return JSONResponse(
             status_code=400,
@@ -545,27 +557,24 @@ async def _handle_authorization_code_grant(
     # Mark code as used
     auth_code.mark_used(session)
 
-    # Look up identity for roles
-    identity = Identity.get(session, auth_code.identity_email)
-    roles = [r.value if hasattr(r, "value") else r for r in identity.roles] if identity else []
-
     # Generate access token
-    access_token = create_signed_jwt(auth_code.identity_email, roles)
+    access_token = create_signed_jwt(identity, client.allowed_scopes)
 
     # Generate ID token
     id_token = create_id_token(
-        email=auth_code.identity_email,
+        session=session,
+        identity=identity,
         client_id=client.client_id,
+        client_scopes=client.allowed_scopes,
         nonce=auth_code.nonce,
         auth_time=auth_code.auth_time,
         access_token=access_token,
-        roles=roles,
     )
 
     # Generate refresh token
     rt = RefreshToken(
         client_id=client.client_id,
-        identity_email=auth_code.identity_email,
+        identity_id=identity.id,
         scopes=auth_code.scopes,
         expires_at=datetime.now(timezone.utc)
         + timedelta(seconds=config.REFRESH_TOKEN_TTL),
@@ -576,7 +585,7 @@ async def _handle_authorization_code_grant(
 
     logger.info(
         "Tokens issued for %s (client: %s)",
-        auth_code.identity_email,
+        identity.email,
         client.client_id,
     )
 
@@ -623,33 +632,33 @@ async def _handle_refresh_token_grant(
             content={"error": "invalid_grant", "error_description": "Client mismatch"},
         )
 
-    # Look up identity for roles
-    identity = Identity.get(session, rt.identity_email)
+    # Look up identity
+    identity = Identity.get_by_id(session, rt.identity_id)
     if not identity:
         return JSONResponse(
             status_code=400,
             content={"error": "invalid_grant", "error_description": "Identity not found"},
         )
-    roles = [r.value if hasattr(r, "value") else r for r in identity.roles]
 
     # Generate new access token
-    access_token = create_signed_jwt(rt.identity_email, roles)
+    access_token = create_signed_jwt(identity, client.allowed_scopes)
 
     # Generate new ID token
     auth_time = identity.last_auth_time or datetime.now(timezone.utc)
     id_token = create_id_token(
-        email=rt.identity_email,
+        session=session,
+        identity=identity,
         client_id=client.client_id,
+        client_scopes=client.allowed_scopes,
         nonce=None,
         auth_time=auth_time,
         access_token=access_token,
-        roles=roles,
     )
 
     # Rotate refresh token
     new_rt = RefreshToken(
         client_id=client.client_id,
-        identity_email=rt.identity_email,
+        identity_id=identity.id,
         scopes=rt.scopes,
         expires_at=datetime.now(timezone.utc)
         + timedelta(seconds=config.REFRESH_TOKEN_TTL),
@@ -661,7 +670,7 @@ async def _handle_refresh_token_grant(
 
     logger.info(
         "Tokens refreshed for %s (client: %s)",
-        rt.identity_email,
+        identity.email,
         client.client_id,
     )
 
@@ -725,14 +734,20 @@ async def _handle_token_exchange_grant(
             content={"error": "invalid_target", "error_description": "Audience is not a registered OAuth client"},
         )
 
-    # Look up identity for roles
-    identity = Identity.get(session, decoded["sub"])
+    # Look up identity from sub claim (now an identity_id)
+    try:
+        identity_id = int(decoded.get("sub", ""))
+    except (TypeError, ValueError):
+        return JSONResponse(
+            status_code=400,
+            content={"error": "invalid_grant", "error_description": "Invalid subject in token"},
+        )
+    identity = Identity.get_by_id(session, identity_id)
     if not identity:
         return JSONResponse(
             status_code=400,
             content={"error": "invalid_grant", "error_description": "Identity not found"},
         )
-    roles = [r.value if hasattr(r, "value") else r for r in identity.roles]
 
     target_consent = Consent.get(session, identity.email, target_client.client_id)
     if not target_consent:
@@ -745,7 +760,11 @@ async def _handle_token_exchange_grant(
         )
 
     # Issue new access token scoped to the target audience
-    access_token = create_signed_jwt(identity.email, roles, audience=audience)
+    access_token = create_signed_jwt(
+        identity,
+        client.allowed_scopes,
+        audience=audience,
+    )
 
     logger.info(
         "Token exchange: %s exchanged token for audience %s (via client: %s)",

@@ -16,7 +16,10 @@ class Role(str, Enum):
 
 class Identity(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
+    first_name: str = Field()
+    last_name: str = Field()
     email: EmailStr = Field(unique=True)
+    email_verified: bool = Field(default=False)
     auth_key: str = Field()
     expires: datetime = Field(
         sa_column=Column(DateTime(timezone=True))
@@ -51,9 +54,19 @@ class Identity(SQLModel, table=True):
         return str(uuid.uuid4())
 
     @classmethod
-    def new(cls, session: Session, email: str, key: str, expires: datetime):
+    def new(
+        cls,
+        session: Session,
+        first_name: str,
+        last_name: str,
+        email: str,
+        key: str,
+        expires: datetime
+    ):
         email = cls.transform_email(email)
         db_identity = cls.model_validate({
+            "first_name": first_name,
+            "last_name": last_name,
             "email": email,
             "auth_key": key,
             "expires": expires
@@ -67,6 +80,11 @@ class Identity(SQLModel, table=True):
     def get(cls, session: Session, email: str):
         email = cls.transform_email(email)
         statement = select(cls).where(cls.email == email, cls.closed == False)
+        return session.exec(statement).first()
+
+    @classmethod
+    def get_by_id(cls, session: Session, id: int):
+        statement = select(cls).where(cls.id == id, cls.closed == False)
         return session.exec(statement).first()
 
     @classmethod
@@ -98,10 +116,12 @@ class Identity(SQLModel, table=True):
             new_roles = [Role.DEFAULT]
         if db_identity:
             validated = cls.model_validate({
+                "first_name": db_identity.first_name,
+                "last_name": db_identity.last_name,
                 "email": new_email if new_email else db_identity.email,
                 "auth_key": new_key if new_key else db_identity.auth_key,
                 "expires": new_expires if new_expires else db_identity.expires,
-                "roles": new_roles if new_roles is not None else db_identity.roles
+                "roles": new_roles if new_roles is not None else db_identity.roles,
             })
             db_identity.email = validated.email
             db_identity.auth_key = validated.auth_key

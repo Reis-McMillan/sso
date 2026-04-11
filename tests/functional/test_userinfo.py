@@ -1,35 +1,42 @@
 import jwt as pyjwt
 from datetime import datetime, timedelta, timezone
 
+from models import Identity
 from utils.jwt import create_signed_jwt, _get_private_key
 
 
-def test_userinfo_get(client, admin_jwt):
+def test_userinfo_get(session, client):
+    admin = Identity.get(session, 'admin@mcmlln.dev')
+    token = create_signed_jwt(admin, ['openid', 'email'])
     res = client.get(
         '/userinfo',
-        headers={'Authorization': f'Bearer {admin_jwt}'},
+        headers={'Authorization': f'Bearer {token}'},
     )
     assert res.status_code == 200
     body = res.json()
-    assert body['sub'] == 'admin@mcmlln.dev'
+    assert body['sub'] == str(admin.id)
     assert body['email'] == 'admin@mcmlln.dev'
     assert body['email_verified'] == True
 
 
-def test_userinfo_post(client, admin_jwt):
+def test_userinfo_post(session, client):
+    admin = Identity.get(session, 'admin@mcmlln.dev')
+    token = create_signed_jwt(admin, ['openid'])
     res = client.post(
         '/userinfo',
-        headers={'Authorization': f'Bearer {admin_jwt}'},
+        headers={'Authorization': f'Bearer {token}'},
     )
     assert res.status_code == 200
     body = res.json()
-    assert body['sub'] == 'admin@mcmlln.dev'
+    assert body['sub'] == str(admin.id)
 
 
-def test_userinfo_includes_roles(client, admin_jwt):
+def test_userinfo_includes_roles(session, client):
+    admin = Identity.get(session, 'admin@mcmlln.dev')
+    token = create_signed_jwt(admin, ['openid'])
     res = client.get(
         '/userinfo',
-        headers={'Authorization': f'Bearer {admin_jwt}'},
+        headers={'Authorization': f'Bearer {token}'},
     )
     body = res.json()
     assert 'roles' in body
@@ -49,10 +56,11 @@ def test_userinfo_invalid_token(client):
     assert res.status_code == 401
 
 
-def test_userinfo_expired_token(client):
+def test_userinfo_expired_token(session, client):
+    admin = Identity.get(session, 'admin@mcmlln.dev')
     now = datetime.now(timezone.utc)
     payload = {
-        'sub': 'admin@mcmlln.dev',
+        'sub': str(admin.id),
         'roles': ['admin'],
         'iat': now - timedelta(minutes=10),
         'exp': now - timedelta(minutes=5),

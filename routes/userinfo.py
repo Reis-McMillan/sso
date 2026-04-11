@@ -4,7 +4,10 @@ import jwt as pyjwt
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from sqlmodel import Session
 
+from database import get_session
+from models.identity import Identity
 from utils.jwt import get_public_key_pem
 
 logger = logging.getLogger("verys.userinfo")
@@ -19,6 +22,7 @@ security = HTTPBearer(auto_error=False)
 async def userinfo(
     request: Request,
     credentials: HTTPAuthorizationCredentials | None = Depends(security),
+    session: Session = Depends(get_session),
 ):
     # Accept token from Authorization header or POST body (access_token field)
     token = None
@@ -44,20 +48,33 @@ async def userinfo(
     except pyjwt.InvalidTokenError:
         raise HTTPException(status_code=401, detail="Invalid token")
 
-    email = decoded.get("sub")
-    if not email:
+    sub = decoded.get("sub")
+    if not sub:
         raise HTTPException(status_code=401, detail="Invalid token: missing subject")
 
-    # Build claims based on what's available
-    # The scopes were encoded into the access token's audience/context
-    # For simplicity, return all claims the token carries
-    claims = {"sub": email}
+    try:
+        identity_id = int(sub)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=401, detail="Invalid token: bad subject")
 
-    # email scope claims
-    claims["email"] = email
-    claims["email_verified"] = True
+    identity = Identity.get_by_id(session, identity_id)
+    if not identity:
+        raise HTTPException(status_code=401, detail="Identity not found")
 
-    # profile scope claims
+    token_scopes = set(decoded.get("scopes") or [])
+
+    claims = {"sub": str(identity.id)}
+
+    if "email" in token_scopes:
+        claims["email"] = identity.email
+        claims["email_verified"] = identity.email_verified
+
+    if "profile" in token_scopes:
+        claims["given_name"] = identity.first_name
+        claims["family_name"] = identity.last_name
+        claims["name"] = f"{identity.first_name} {identity.last_name}"
+        claims["origination"] = identity.origination.isoformat() if identity.origination else None
+
     roles = decoded.get("roles")
     if roles:
         claims["roles"] = roles

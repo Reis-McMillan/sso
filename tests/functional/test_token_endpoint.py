@@ -74,13 +74,15 @@ def test_token_authorization_code(session, client):
 
     # Verify access token
     public_key = get_public_key_pem()
+    from models import Identity
+    admin = Identity.get(session, 'admin@mcmlln.dev')
     decoded = pyjwt.decode(body['access_token'], public_key, algorithms=["EdDSA"], options={"verify_aud": False})
-    assert decoded['sub'] == 'admin@mcmlln.dev'
+    assert decoded['sub'] == str(admin.id)
     assert decoded['iss'] == config.ISSUER
 
     # Verify ID token
     id_decoded = pyjwt.decode(body['id_token'], public_key, algorithms=["EdDSA"], options={"verify_aud": False})
-    assert id_decoded['sub'] == 'admin@mcmlln.dev'
+    assert id_decoded['sub'] == str(admin.id)
     assert id_decoded['aud'] == oa.client_id
     assert id_decoded['iss'] == config.ISSUER
     assert 'auth_time' in id_decoded

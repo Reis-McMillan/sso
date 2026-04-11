@@ -6,7 +6,7 @@ from models.refresh_token import RefreshToken
 def test_create(session):
     rt = RefreshToken(
         client_id="test-client-id",
-        identity_email="user@example.com",
+        identity_id=1,
         scopes=["openid", "email"],
         expires_at=datetime.now(timezone.utc) + timedelta(days=30),
     )
@@ -17,7 +17,7 @@ def test_create(session):
     assert isinstance(rt.id, int)
     assert len(rt.token) == 96  # 48 bytes hex
     assert rt.client_id == "test-client-id"
-    assert rt.identity_email == "user@example.com"
+    assert rt.identity_id == 1
     assert rt.scopes == ["openid", "email"]
     assert rt.revoked == False
     assert rt.replaced_by is None
@@ -26,7 +26,7 @@ def test_create(session):
 def test_get_by_token(session):
     rt = RefreshToken(
         client_id="test-client-id",
-        identity_email="user@example.com",
+        identity_id=1,
         scopes=["openid"],
         expires_at=datetime.now(timezone.utc) + timedelta(days=30),
     )
@@ -47,7 +47,7 @@ def test_get_by_token_not_found(session):
 def test_is_expired(session):
     rt = RefreshToken(
         client_id="test-client-id",
-        identity_email="user@example.com",
+        identity_id=1,
         scopes=["openid"],
         expires_at=datetime.now(timezone.utc) - timedelta(days=1),
     )
@@ -61,7 +61,7 @@ def test_is_expired(session):
 def test_is_not_expired(session):
     rt = RefreshToken(
         client_id="test-client-id",
-        identity_email="user@example.com",
+        identity_id=1,
         scopes=["openid"],
         expires_at=datetime.now(timezone.utc) + timedelta(days=30),
     )
@@ -75,7 +75,7 @@ def test_is_not_expired(session):
 def test_revoke(session):
     rt = RefreshToken(
         client_id="test-client-id",
-        identity_email="user@example.com",
+        identity_id=1,
         scopes=["openid"],
         expires_at=datetime.now(timezone.utc) + timedelta(days=30),
     )
@@ -93,7 +93,7 @@ def test_revoke(session):
 def test_revoke_with_replacement(session):
     rt = RefreshToken(
         client_id="test-client-id",
-        identity_email="user@example.com",
+        identity_id=1,
         scopes=["openid"],
         expires_at=datetime.now(timezone.utc) + timedelta(days=30),
     )
@@ -113,7 +113,7 @@ def test_revoke_all_for_user_client(session):
     for _ in range(3):
         rt = RefreshToken(
             client_id="revoke-test-client",
-            identity_email="revoke@example.com",
+            identity_id=2,
             scopes=["openid"],
             expires_at=datetime.now(timezone.utc) + timedelta(days=30),
         )
@@ -121,14 +121,14 @@ def test_revoke_all_for_user_client(session):
     session.commit()
 
     RefreshToken.revoke_all_for_user_client(
-        session, "revoke@example.com", "revoke-test-client"
+        session, 2, "revoke-test-client"
     )
 
     from sqlmodel import select
 
     tokens = session.exec(
         select(RefreshToken).where(
-            RefreshToken.identity_email == "revoke@example.com",
+            RefreshToken.identity_id == 2,
             RefreshToken.client_id == "revoke-test-client",
         )
     ).all()

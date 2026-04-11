@@ -17,9 +17,10 @@ class FederationSession(SQLModel, table=True):
         unique=True,
         index=True,
     )
-    identity_email: str = Field()
+    identity_id: int = Field()
     provider_id: str = Field()
     oauth2_session_id: Optional[str] = Field(default=None)
+    redirect_uri: Optional[str] = Field(default=None)
     created_at: datetime = Field(
         default_factory=lambda: datetime.now(timezone.utc),
         sa_column=Column(DateTime(timezone=True)),

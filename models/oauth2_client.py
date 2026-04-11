@@ -25,6 +25,11 @@ class OAuthClient(SQLModel, table=True):
         default_factory=lambda: ["openid"],
         sa_column=Column(ARRAY(String)),
     )
+    prm_uri: Optional[str] = Field(default=None)
+    required_scopes: Optional[List[str]] = Field(
+        default_factory=lambda: [],
+        sa_column=Column(ARRAY(String))
+    )
     grant_types: List[str] = Field(
         default_factory=lambda: ["authorization_code", "refresh_token"],
         sa_column=Column(ARRAY(String)),

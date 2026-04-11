@@ -43,7 +43,7 @@ class Scope(SQLModel, table=True):
         """Ensure standard OIDC scopes exist in the database."""
         defaults = [
             ("openid", "Verify your identity"),
-            ("profile", "View your profile information"),
+            ("profile", "View your name and profile information"),
             ("email", "View your email address"),
         ]
         for name, description in defaults:

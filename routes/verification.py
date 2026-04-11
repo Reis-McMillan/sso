@@ -44,22 +44,24 @@ async def verify_code(
         raise HTTPException(status_code=404, detail=str(e))
 
     r = Identity.get(session, email)
+    if not r:
+        logger.warning("Verification failed: no identity for %s", email)
+        raise HTTPException(status_code=404, detail="No account exists for this email")
 
-    if not r or r.expires < datetime.now(timezone.utc):
+    # If the identity has expired, refresh the session key & expiry. Verification
+    # renews browser sessions; email_verified, once set, stays set.
+    if r.expires < datetime.now(timezone.utc):
         new_key = Identity.make_auth_key()
         expiry_dt = datetime.now(timezone.utc) + timedelta(seconds=config.AUTHENTICATION_TTL)
-        if r:
-            r = Identity.update(session, email, new_key=new_key, new_expires=expiry_dt)
-        else:
-            r = Identity.new(session, email, new_key, expiry_dt)
+        r = Identity.update(session, email, new_key=new_key, new_expires=expiry_dt)
 
-    # Update last_auth_time
     r.last_auth_time = datetime.now(timezone.utc)
+    r.email_verified = True
     session.add(r)
     session.commit()
     session.refresh(r)
 
-    logger.info("Verification successful: %s (identity %s)", email, "updated" if r else "created")
+    logger.info("Verification successful: %s", email)
     value, iv = encrypt_cookie(r.email, r.auth_key)
     max_age = int(config.AUTHENTICATION_TTL)
     cookie_opts = {
@@ -110,20 +112,17 @@ async def verify_code(
     return response
 
 
-@router.post("/", status_code=201)
-async def handle_verification(
-    email: str = Query(...),
-    session: Session = Depends(get_session)
-):
-    vcode = Verification.make_code()
+async def send_verification_email(session: Session, email: str) -> None:
+    """Generate a verification code for the given email and send it.
 
-    # Process and send email
+    Raises HTTPException(500) if the email send fails.
+    """
+    vcode = Verification.make_code()
     Verification.make_entry(session, email, vcode)
 
     ttl_delta = timedelta(seconds=config.VERIFY_DELTA)
     identity_ttl_str = humanize.precisedelta(ttl_delta, minimum_unit="minutes")
 
-    # Load templates and replace placeholders
     text_template = (TEMPLATE_DIR / "verification.txt").read_text()
     html_template = (TEMPLATE_DIR / "verification.html").read_text()
 
@@ -168,4 +167,18 @@ async def handle_verification(
         logger.error("Email send failed for %s: %s", email, e)
         raise HTTPException(status_code=500, detail="Email service failed.")
 
+
+@router.post("/", status_code=201)
+async def handle_verification(
+    email: str = Query(...),
+    session: Session = Depends(get_session)
+):
+    identity = Identity.get(session, email)
+    if not identity:
+        raise HTTPException(
+            status_code=404,
+            detail="No account exists for this email. User must register first."
+        )
+
+    await send_verification_email(session, email)
     return Response(status_code=201)
