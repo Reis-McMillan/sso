@@ -202,7 +202,6 @@ async def federation_callback(
         raise HTTPException(status_code=502, detail="Failed to exchange code with upstream provider")
 
     token_data = token_response.json()
-    id_token = token_data.get("id_token")
     access_token = token_data.get("access_token")
     refresh_token = token_data.get("refresh_token")
     expires_in = token_data.get("expires_in")

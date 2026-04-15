@@ -17,6 +17,9 @@
         .step { display: none; }
         .step.active { display: block; }
         .error { color: #dc2626; font-size: 0.85rem; margin-bottom: 0.5rem; display: none; }
+        .register-link { margin-top: 1rem; text-align: center; font-size: 0.9rem; color: #666; }
+        .register-link a { color: #2563eb; text-decoration: none; }
+        .register-link a:hover { text-decoration: underline; }
     </style>
 </head>
 <body>
@@ -42,6 +45,12 @@
                 <button type="submit">Verify</button>
             </form>
         </div>
+
+        {% if registration_uri %}
+        <p class="register-link">
+            Don't have an account? <a href="{{ registration_uri }}?oauth2_session={{ oauth2_session_id }}">Register</a>
+        </p>
+        {% endif %}
     </div>
 
     <script>

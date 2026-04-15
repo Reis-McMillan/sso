@@ -8,7 +8,7 @@ from middleware.logging import RequestLoggingMiddleware
 from database import initialize_db, get_session
 from models.oauth2_client import OAuthClient
 from models.scope import Scope
-from routes import identity, jwks, verification, discovery, oauth2, userinfo, session, clients, scopes, providers, federation
+from routes import identity, jwks, verification, discovery, oauth2, userinfo, session, clients, scopes, providers, federation, registration
 from utils.logging import setup_logging, shutdown_logging
 
 
@@ -26,7 +26,7 @@ async def lifespan(app: FastAPI):
                 client_id=config.VERYS_CLIENT_ID,
                 client_name="Verys Client",
                 redirect_uris=[config.VERYS_CLIENT_REDIRECT_URI],
-                allowed_scopes=["openid"],
+                allowed_scopes=["openid", "email", "profile"],
                 grant_types=["authorization_code", "refresh_token"],
                 response_types=["code"],
                 token_endpoint_auth_method="none",
@@ -52,6 +52,7 @@ app.add_middleware(RequestLoggingMiddleware)
 # Public endpoints
 app.include_router(discovery.router)
 app.include_router(jwks.router)
+app.include_router(registration.router)
 app.include_router(verification.router)
 app.include_router(oauth2.router)
 app.include_router(userinfo.router)

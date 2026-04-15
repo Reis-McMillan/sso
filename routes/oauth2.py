@@ -243,6 +243,7 @@ async def authorize(
             "oauth2_session_id": oauth2_session.session_id,
             "client_name": client.client_name,
             "issuer": config.ISSUER,
+            "registration_uri": config.VERYS_CLIENT_REGISTRATION_URI,
         })
 
     # Check consent
@@ -734,6 +735,22 @@ async def _handle_token_exchange_grant(
             content={"error": "invalid_target", "error_description": "Audience is not a registered OAuth client"},
         )
 
+    # Requesting client must be allowed every scope the target requires.
+    required_scopes = list(target_client.required_scopes or [])
+    missing_scopes = [
+        s for s in required_scopes if s not in (client.allowed_scopes or [])
+    ]
+    if missing_scopes:
+        return JSONResponse(
+            status_code=403,
+            content={
+                "error": "insufficient_scope",
+                "error_description": (
+                    f"Client is not allowed scopes required by target: {' '.join(missing_scopes)}"
+                ),
+            },
+        )
+
     # Look up identity from sub claim (now an identity_id)
     try:
         identity_id = int(decoded.get("sub", ""))
@@ -759,10 +776,11 @@ async def _handle_token_exchange_grant(
             }
         )
 
-    # Issue new access token scoped to the target audience
+    # Issue new access token scoped to the target audience with the target's
+    # required scopes.
     access_token = create_signed_jwt(
         identity,
-        client.allowed_scopes,
+        required_scopes,
         audience=audience,
     )
 
