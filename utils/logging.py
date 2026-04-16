@@ -80,6 +80,7 @@ def setup_logging(level=logging.INFO):
 
     root = logging.getLogger()
     root.setLevel(level)
+    logging.getLogger("httpx").setLevel(logging.WARNING)
 
     formatter = logging.Formatter(
         "[%(asctime)s] %(levelname)s %(name)s: %(message)s",

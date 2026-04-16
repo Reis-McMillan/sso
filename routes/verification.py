@@ -164,7 +164,7 @@ async def send_verification_email(session: Session, email: str) -> None:
         Verification.email_sent_at(session, email, datetime.now(timezone.utc))
         logger.info("Verification email sent to %s", email)
     except Exception as e:
-        logger.error("Email send failed for %s: %s", email, e)
+        logger.error("Email send failed for %s: %s", email, e, exc_info=True)
         raise HTTPException(status_code=500, detail="Email service failed.")
 
 

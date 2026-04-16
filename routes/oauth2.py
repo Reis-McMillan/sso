@@ -721,7 +721,12 @@ async def _handle_token_exchange_grant(
             algorithms=["EdDSA"],
             audience=config.ISSUER,
         )
-    except jwt.InvalidTokenError:
+    except jwt.InvalidTokenError as e:
+        logger.warning(
+            "Invalid subject token during token exchange: %s",
+            e,
+            exc_info=True
+        )
         return JSONResponse(
             status_code=400,
             content={"error": "invalid_grant", "error_description": "Invalid or expired subject token"},
@@ -754,7 +759,8 @@ async def _handle_token_exchange_grant(
     # Look up identity from sub claim (now an identity_id)
     try:
         identity_id = int(decoded.get("sub", ""))
-    except (TypeError, ValueError):
+    except (TypeError, ValueError) as e:
+        logger.warning("Invalid subject during token excahnge: %s", e)
         return JSONResponse(
             status_code=400,
             content={"error": "invalid_grant", "error_description": "Invalid subject in token"},

@@ -62,6 +62,12 @@ async def create_provider(
             raise HTTPException(status_code=400, detail="OIDC discovery document missing jwks_uri")
         userinfo_endpoint = discovery.get("userinfo_endpoint")
     except httpx.RequestError as e:
+        logger.error(
+            "Failed to fetch discovery URL %s: %s",
+            body.discovery_url,
+            e,
+            exc_info=True
+        )
         raise HTTPException(status_code=400, detail=f"Failed to reach discovery URL: {e}")
 
     provider = ExternalProvider(

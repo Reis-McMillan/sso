@@ -4,6 +4,7 @@ from fastapi.responses import JSONResponse
 from sqlmodel import Session
 from sqlalchemy.exc import IntegrityError
 from pydantic import BaseModel, EmailStr
+import logging
 
 from database import get_session
 from models.identity import Identity
@@ -11,6 +12,7 @@ from models.oauth2_session import OAuth2Session
 from config import config
 from routes.verification import send_verification_email
 
+logger = logging.getLogger('verys.registration')
 
 class RegistrationBody(BaseModel):
     first_name: str
@@ -47,6 +49,10 @@ async def register(
             expires=expiry_dt,
         )
     except IntegrityError:
+        logger.warning(
+            "Failed to create identity for %s... identity already exists",
+            body.email,
+        )
         raise HTTPException(
             status_code=400,
             detail="An account already exists for this email."

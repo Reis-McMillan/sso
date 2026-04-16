@@ -41,20 +41,31 @@ async def userinfo(
             token,
             public_key_pem,
             algorithms=["EdDSA"],
-            options={"verify_aud": False},
         )
     except pyjwt.ExpiredSignatureError:
+        logger.warning("Expired token getting user info: %s", e)
         raise HTTPException(status_code=401, detail="Token expired")
-    except pyjwt.InvalidTokenError:
+    except pyjwt.InvalidTokenError as e:
+        logger.warning(
+            "Invalid token getting user info: %s",
+            e,
+            exc_info=True
+        )
         raise HTTPException(status_code=401, detail="Invalid token")
 
     sub = decoded.get("sub")
     if not sub:
+        logger.warning(
+            "Subject missing while getting user info",
+            exc_info=True
+        )
         raise HTTPException(status_code=401, detail="Invalid token: missing subject")
 
     try:
         identity_id = int(sub)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError) as e:
+        logger.warning(
+            "Invalid subject data type while getting user info: %s", e)
         raise HTTPException(status_code=401, detail="Invalid token: bad subject")
 
     identity = Identity.get_by_id(session, identity_id)
