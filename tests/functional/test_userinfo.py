@@ -3,11 +3,12 @@ from datetime import datetime, timedelta, timezone
 
 from models import Identity
 from utils.jwt import create_signed_jwt, _get_private_key
+from config import config
 
 
 def test_userinfo_get(session, client):
     admin = Identity.get(session, 'admin@mcmlln.dev')
-    token = create_signed_jwt(admin, ['openid', 'email'])
+    token = create_signed_jwt(admin, ['openid', 'email'], config.ISSUER)
     res = client.get(
         '/userinfo',
         headers={'Authorization': f'Bearer {token}'},
@@ -21,7 +22,7 @@ def test_userinfo_get(session, client):
 
 def test_userinfo_post(session, client):
     admin = Identity.get(session, 'admin@mcmlln.dev')
-    token = create_signed_jwt(admin, ['openid'])
+    token = create_signed_jwt(admin, ['openid'], config.ISSUER)
     res = client.post(
         '/userinfo',
         headers={'Authorization': f'Bearer {token}'},
@@ -80,6 +81,7 @@ def test_userinfo_missing_sub(client):
         'roles': ['admin'],
         'iat': now,
         'exp': now + timedelta(minutes=5),
+        'aud': config.ISSUER
     }
     token = pyjwt.encode(payload, _get_private_key(), algorithm='EdDSA')
     res = client.get(

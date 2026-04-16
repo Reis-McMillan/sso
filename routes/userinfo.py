@@ -9,6 +9,7 @@ from sqlmodel import Session
 from database import get_session
 from models.identity import Identity
 from utils.jwt import get_public_key_pem
+from config import config
 
 logger = logging.getLogger("verys.userinfo")
 
@@ -41,8 +42,9 @@ async def userinfo(
             token,
             public_key_pem,
             algorithms=["EdDSA"],
+            audience=config.ISSUER,
         )
-    except pyjwt.ExpiredSignatureError:
+    except pyjwt.ExpiredSignatureError as e:
         logger.warning("Expired token getting user info: %s", e)
         raise HTTPException(status_code=401, detail="Token expired")
     except pyjwt.InvalidTokenError as e:
