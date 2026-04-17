@@ -63,7 +63,7 @@
             errorEl.style.display = "none";
 
             try {
-                const resp = await fetch(`{{ issuer }}/verification/?email=${encodeURIComponent(email)}`, { method: "POST" });
+                const resp = await fetch(`{{ issuer }}/verification?email=${encodeURIComponent(email)}`, { method: "POST" });
                 if (!resp.ok) {
                     errorEl.textContent = "Failed to send verification code.";
                     errorEl.style.display = "block";
@@ -87,7 +87,7 @@
 
             try {
                 const resp = await fetch(
-                    `{{ issuer }}/verification/?email=${encodeURIComponent(email)}&code=${encodeURIComponent(code)}&oauth2_session=${encodeURIComponent(sessionId)}`,
+                    `{{ issuer }}/verification?email=${encodeURIComponent(email)}&code=${encodeURIComponent(code)}&oauth2_session=${encodeURIComponent(sessionId)}`,
                     { method: "GET", redirect: "follow" }
                 );
                 if (resp.redirected) {

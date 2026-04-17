@@ -24,7 +24,7 @@ TEMPLATE_DIR = Path(__file__).resolve().parent.parent / "templates"
 
 router = APIRouter(prefix="/verification", tags=["Verification"])
 
-@router.get("/", status_code=200)
+@router.get("", status_code=200)
 async def verify_code(
     email: str = Query(...),
     code: str = Query(...),
@@ -168,7 +168,7 @@ async def send_verification_email(session: Session, email: str) -> None:
         raise HTTPException(status_code=500, detail="Email service failed.")
 
 
-@router.post("/", status_code=201)
+@router.post("", status_code=201)
 async def handle_verification(
     email: str = Query(...),
     session: Session = Depends(get_session)

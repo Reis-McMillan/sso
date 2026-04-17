@@ -21,7 +21,7 @@ def test_request_verification(client, session):
     _register(session, 'newuser@example.com')
     with patch('routes.verification.aiosmtplib.send', new_callable=AsyncMock):
         res = client.post(
-            '/verification/',
+            '/verification',
             params={'email': 'newuser@example.com'}
         )
     assert res.status_code == 201
@@ -31,7 +31,7 @@ def test_request_verification_creates_entry(client, session):
     _register(session, 'entrycheck@example.com')
     with patch('routes.verification.aiosmtplib.send', new_callable=AsyncMock):
         client.post(
-            '/verification/',
+            '/verification',
             params={'email': 'entrycheck@example.com'}
         )
 
@@ -51,7 +51,7 @@ def test_verify_valid_code(client, session):
     Verification.make_entry(session, 'verifytest@example.com', code)
 
     res = client.get(
-        '/verification/',
+        '/verification',
         params={'email': 'verifytest@example.com', 'code': str(code)}
     )
     assert res.status_code == 200
@@ -79,7 +79,7 @@ def test_verify_refreshes_expired_identity(client, session):
     Verification.make_entry(session, 'existinguser@example.com', code)
 
     res = client.get(
-        '/verification/',
+        '/verification',
         params={'email': 'existinguser@example.com', 'code': str(code)}
     )
     assert res.status_code == 200
@@ -97,7 +97,7 @@ def test_verify_invalid_code(client, session):
     Verification.make_entry(session, 'invalidcode@example.com', code)
 
     res = client.get(
-        '/verification/',
+        '/verification',
         params={'email': 'invalidcode@example.com', 'code': '000000'}
     )
     assert res.status_code == 404
@@ -113,7 +113,7 @@ def test_verify_expired_code(client, session):
     session.commit()
 
     res = client.get(
-        '/verification/',
+        '/verification',
         params={'email': 'expiredcode@example.com', 'code': str(code)}
     )
     assert res.status_code == 404
@@ -122,7 +122,7 @@ def test_verify_expired_code(client, session):
 
 def test_verify_nonexistent_email(client):
     res = client.get(
-        '/verification/',
+        '/verification',
         params={'email': 'nobody@example.com', 'code': '123456'}
     )
     assert res.status_code == 404
@@ -130,7 +130,7 @@ def test_verify_nonexistent_email(client):
 
 def test_verify_non_numeric_code(client):
     res = client.get(
-        '/verification/',
+        '/verification',
         params={'email': 'test@example.com', 'code': 'abc'}
     )
     assert res.status_code == 404
@@ -140,7 +140,7 @@ def test_email_send_failure(client, session):
     _register(session, 'fail@example.com')
     with patch('routes.verification.aiosmtplib.send', new_callable=AsyncMock, side_effect=Exception('SMTP error')):
         res = client.post(
-            '/verification/',
+            '/verification',
             params={'email': 'fail@example.com'}
         )
     assert res.status_code == 500
@@ -148,10 +148,10 @@ def test_email_send_failure(client, session):
 
 
 def test_missing_email_post(client):
-    res = client.post('/verification/')
+    res = client.post('/verification')
     assert res.status_code == 422
 
 
 def test_missing_params_get(client):
-    res = client.get('/verification/')
+    res = client.get('/verification')
     assert res.status_code == 422
