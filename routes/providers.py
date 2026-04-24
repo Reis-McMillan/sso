@@ -195,10 +195,10 @@ async def delete_provider(
     if not provider:
         raise HTTPException(status_code=404, detail="Provider not found")
 
-    # Delete associated scopes
-    scopes = Scope.get_by_provider(session, provider_id)
-    for s in scopes:
-        session.delete(s)
+    # Delete associated scope
+    scope = Scope.get_by_provider(session, provider_id)
+    if scope:
+        session.delete(scope)
 
     # Delete associated external tokens for all users
     tokens = ExternalToken.get_all_for_provider(session, provider_id)
@@ -208,5 +208,9 @@ async def delete_provider(
     session.delete(provider)
     session.commit()
 
-    logger.info("Provider deleted: %s (with %d scopes, %d tokens)", provider_id, len(scopes), len(tokens))
+    logger.info(
+        "Provider deleted: %s (with %d tokens)",
+        provider_id,
+        len(tokens)
+    )
     return {"detail": "Provider deleted"}

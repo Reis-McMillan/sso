@@ -8,10 +8,13 @@ from sqlmodel import Field, SQLModel, Session, select
 class Scope(SQLModel, table=True):
     __tablename__ = "scope"
 
+
     id: int | None = Field(default=None, primary_key=True)
     name: str = Field(unique=True, index=True)
     description: str = Field()
-    provider_id: Optional[str] = Field(default=None, index=True)
+    provider_id: Optional[str] = Field(
+        default=None, unique=True, index=True
+    )
     created_at: datetime = Field(
         default_factory=lambda: datetime.now(timezone.utc),
         sa_column=Column(DateTime(timezone=True)),
@@ -23,9 +26,9 @@ class Scope(SQLModel, table=True):
         return session.exec(statement).first()
 
     @classmethod
-    def get_by_provider(cls, session: Session, provider_id: str) -> list["Scope"]:
+    def get_by_provider(cls, session: Session, provider_id: str) -> "Scope":
         statement = select(cls).where(cls.provider_id == provider_id)
-        return list(session.exec(statement).all())
+        return session.exec(statement).first()
 
     @classmethod
     def all(cls, session: Session) -> list["Scope"]:

@@ -3,6 +3,7 @@ from typing import List, Optional
 
 from sqlalchemy import Column, ARRAY, String, DateTime, UniqueConstraint
 from sqlmodel import Field, SQLModel, Session, select
+from pydantic import EmailStr
 
 from utils.encryption import encrypt_field, decrypt_field
 
@@ -16,6 +17,7 @@ class ExternalToken(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
     identity_id: int = Field(index=True)
     provider_id: str = Field(index=True)
+    email: EmailStr = Field()
     subject: str = Field()
     access_token_encrypted: str = Field()
     refresh_token_encrypted: Optional[str] = Field(default=None)
@@ -67,14 +69,10 @@ class ExternalToken(SQLModel, table=True):
     def get(
         cls,
         session: Session,
-        identity_id: int,
-        provider_id: str,
-        subject: str
+        token_id: int
     ) -> Optional["ExternalToken"]:
         statement = select(cls).where(
-            cls.identity_id == identity_id,
-            cls.provider_id == provider_id,
-            cls.subject == subject
+            cls.id == token_id
         )
         return session.exec(statement).first()
 
@@ -90,8 +88,9 @@ class ExternalToken(SQLModel, table=True):
         expires_at: Optional[datetime],
         scopes_granted: List[str],
         subject: str,
+        email: EmailStr
     ) -> "ExternalToken":
-        existing = cls.get(session, identity_id, provider_id, subject=subject)
+        existing = cls.get_by_id_sub(session, identity_id, provider_id, subject)
         if existing:
             existing.access_token_encrypted = encrypt_field(access_token)
             if refresh_token:
@@ -119,10 +118,31 @@ class ExternalToken(SQLModel, table=True):
         session.commit()
         session.refresh(token)
         return token
+    
+    @classmethod
+    def get_by_id_sub(
+        cls,
+        session: Session,
+        identity_id: int,
+        provider_id: str,
+        subject: str
+    ):
+        statement = select(cls).where(
+            cls.identity_id == identity_id,
+            cls.provider_id == provider_id,
+            cls.subject == subject
+        )
+        return session.exec(statement).first()
 
     @classmethod
-    def get_all_for_user(cls, session: Session, identity_id: int) -> list["ExternalToken"]:
-        statement = select(cls).where(cls.identity_id == identity_id)
+    def get_all_for_user(
+        cls,
+        session: Session,
+        identity_id: int,
+    ) -> list["ExternalToken"]:
+        statement = select(cls).where(
+            cls.identity_id == identity_id
+        )
         return list(session.exec(statement).all())
 
     @classmethod

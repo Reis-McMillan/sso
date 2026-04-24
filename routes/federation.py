@@ -18,12 +18,22 @@ from models.federation_session import FederationSession
 from models.identity import Identity
 from models.oauth2_client import OAuthClient
 from models.oauth2_session import OAuth2Session
+from models.scope import Scope
 from utils.browser_auth import get_browser_identity
 
 
 logger = logging.getLogger("verys.federation")
 
 router = APIRouter(prefix="/federation", tags=["Federation"])
+
+def _scoped_providers(session: Session, scopes: list[str]):
+    provider_ids = set()
+    for s_name in scopes:
+        scope = Scope.get_by_name(session, s_name)
+        if scope and scope.provider_id:
+            provider_ids.add(scope.provider_id)
+
+    return provider_ids
 
 
 @router.get("/initiate")
@@ -231,6 +241,10 @@ async def federation_callback(
     subject = userinfo_response.json().get("sub")
     if not subject:
         raise HTTPException(status_code=502, detail="Userinfo response missing sub claim")
+    
+    email = userinfo_response.json().get('email')
+    if not email:
+        raise HTTPException(status_code=502, detail="Userinfo response missing email claim")
 
     expires_at = None
     if expires_in:
@@ -247,6 +261,7 @@ async def federation_callback(
         expires_at=expires_at,
         scopes_granted=scope_str.split() if scope_str else [],
         subject=subject,
+        email=email
     )
 
     logger.info(
@@ -293,26 +308,73 @@ async def federation_callback(
     return JSONResponse({"detail": "Federation complete", "provider": provider_id})
 
 
-@router.get("/providers", dependencies=[Depends(authenticate_user)])
-async def list_user_providers(
+@router.get("/tokens", dependencies=[Depends(authenticate_user)])
+async def get_external_tokens(
     request: Request,
     session: Session = Depends(get_session),
 ):
     """List external providers the user has linked tokens for."""
     identity_id = request.state.identity.id
-    tokens = ExternalToken.get_all_for_user(session, identity_id)
-    return [
-        {"provider_id": t.provider_id, "subject": t.subject}
-        for t in tokens
-    ]
+    tokens: list[ExternalToken] = []
+    provider_ids = _scoped_providers(session, request.state.token_scopes)
+    for pid in provider_ids:
+        t = ExternalToken.get_all_for_user_by_provider(session, identity_id, pid)
+        if t:
+            tokens.extend(t)
+    refreshed = []
+    for t in tokens:
+        checked = await _token_check(session, t)
+        if checked:
+            refreshed.append(checked)
+    tokens = refreshed
+    return [{
+        "token_id": t.id,
+        "provider_id": t.provider_id,
+        "subject": t.subject,
+        "access_token": t.access_token,
+        "token_type": t.token_type,
+        "expires_at": t.expires_at.isoformat() if t.expires_at else None,
+        "email": t.email
+    } for t in tokens if t]
 
 
-@router.get("/tokens", dependencies=[Depends(authenticate_user)])
-async def get_external_tokens(
+@router.get("/{identity_id}/tokens", dependencies=[Depends(authenticate_user)])
+async def get_user_external_tokens(
     request: Request,
-    provider_id: str = Query(...),
-    subject: str = Query(...),
-    session: Session = Depends(get_session),
+    identity_id: int,
+    session: Session = Depends(get_session)
+):
+    if not "admin" in request.state.identity.roles:
+        raise HTTPException(
+            status_code=403,
+            detail="Not authorized to perform this action."
+        )
+    tokens = (
+        ExternalToken.get_all_for_user(session, identity_id)
+        or []
+    )
+    refreshed = []
+    for t in tokens:
+        checked = await _token_check(session, t)
+        if checked:
+            refreshed.append(checked)
+    tokens = refreshed
+    return [{
+        "token_id": t.id,
+        "provider_id": t.provider_id,
+        "subject": t.subject,
+        "access_token": t.access_token,
+        "token_type": t.token_type,
+        "expires_at": t.expires_at.isoformat() if t.expires_at else None,
+        "email": t.email
+    } for t in tokens if t]
+
+
+@router.get("/{token_id}", dependencies=[Depends(authenticate_user)])
+async def get_external_token(
+    request: Request,
+    token_id: int,
+    session: Session = Depends(get_session)
 ):
     """Serve external access tokens to downstream clients.
 
@@ -320,39 +382,66 @@ async def get_external_tokens(
     Automatically refreshes expired tokens if a refresh token is available.
     """
     identity_id = request.state.identity.id
+    scoped_providers = _scoped_providers(session, request.state.token_scopes)
 
     # Look up external token
-    ext_token = ExternalToken.get(session, identity_id, provider_id, subject)
+    ext_token = ExternalToken.get(session, token_id)
     if not ext_token:
-        raise HTTPException(status_code=404, detail="No external token found for this provider")
+        raise HTTPException(status_code=404, detail="External token not found")
+    if (ext_token.identity_id != identity_id
+        and not "admin" in request.state.identity.roles):
+        raise HTTPException(
+            status_code=403,
+            detail="Unauthorized to perform this action."
+        )
+    # Check scope
+    if (not ext_token.provider_id in scoped_providers
+        and not "admin" in request.state.identity.roles):
+        raise HTTPException(
+            status_code=403,
+            detail="Access not granted for this token."
+        )
 
-    # Auto-refresh if expired
+    # Auto-refresh if expired (capture provider_id before check — ext_token may become None)
+    ext_token_pid = ext_token.provider_id
+    ext_token = await _token_check(session, ext_token)
+    if not ext_token:
+        return JSONResponse(
+            status_code=401,
+            content={
+                "error": "reauthorization_required",
+                "error_description": "External token refresh failed. User must re-authorize with the provider.",
+                "provider_id": ext_token_pid,
+            },
+            headers={"Cache-Control": "no-store"},
+        )
+
+    return JSONResponse(
+        content={
+            "token_id": ext_token.id,
+            "provider_id": ext_token.provider_id,
+            "subject": ext_token.subject,
+            "access_token": ext_token.access_token,
+            "token_type": ext_token.token_type,
+            "expires_at": ext_token.expires_at.isoformat() if ext_token.expires_at else None,
+            "email": ext_token.email
+        },
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+async def _token_check(
+    session: Session, ext_token: ExternalToken
+):
     if ext_token.is_expired() and ext_token.refresh_token:
         refreshed = await _refresh_external_token(session, ext_token)
         if not refreshed:
             # Upstream rejected the refresh token — delete stale record
             session.delete(ext_token)
             session.commit()
-            return JSONResponse(
-                status_code=401,
-                content={
-                    "error": "reauthorization_required",
-                    "error_description": "External token refresh failed. User must re-authorize with the provider.",
-                    "provider_id": provider_id,
-                },
-                headers={"Cache-Control": "no-store"},
-            )
-        ext_token = refreshed
-
-    return JSONResponse(
-        content={
-            "access_token": ext_token.access_token,
-            "token_type": ext_token.token_type,
-            "expires_at": ext_token.expires_at.isoformat() if ext_token.expires_at else None,
-            "provider_id": provider_id,
-        },
-        headers={"Cache-Control": "no-store"},
-    )
+            return None
+        return refreshed
+    return ext_token
 
 
 async def _refresh_external_token(
@@ -412,6 +501,39 @@ async def _refresh_external_token(
     )
 
 # to-do implement route to delete token
-@router.delete('{}')
-async def delete_external_token():
-    pass
+@router.delete('/{token_id}', dependencies=[Depends(authenticate_user)])
+async def delete_external_token(
+    request: Request,
+    token_id: int,
+    session: Session = Depends(get_session)
+):
+    identity_id = request.state.identity.id
+    scoped_providers = _scoped_providers(session, request.state.token_scopes)
+    ext_token = ExternalToken.get(session, token_id)
+
+    if not ext_token:
+        raise HTTPException(
+            status_code=404,
+            detail="External token not found."
+        )
+    if (ext_token.identity_id != identity_id
+        and not "admin" in request.state.identity.roles):
+        raise HTTPException(
+            status_code=403,
+            detail="Unauthorized to perform this action."
+        )
+    if (not ext_token.provider_id in scoped_providers
+        and not "admin" in request.state.identity.roles):
+        raise HTTPException(
+            status_code=403,
+            detail="Access not granted for this token."
+        )
+    session.delete(ext_token)
+    session.commit()
+
+    return JSONResponse(
+        status_code=200,
+        content={
+            "message": "External token deleted."
+        }
+    )
