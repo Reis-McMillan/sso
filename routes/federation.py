@@ -242,10 +242,9 @@ async def federation_callback(
     else: 
         userinfo = userinfo_response.json()
         logger.info(
-            "Successfully retireved userinfo from provider %s for %s: %s",
+            "Successfully retireved userinfo from provider %s for %s.",
             provider,
             fed_session.identity_id,
-            json.dumps(userinfo, indent=4)
         )
 
     subject = userinfo.get("sub")

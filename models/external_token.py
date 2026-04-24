@@ -113,6 +113,7 @@ class ExternalToken(SQLModel, table=True):
             token_type=token_type,
             expires_at=expires_at,
             scopes_granted=scopes_granted,
+            email=email
         )
         session.add(token)
         session.commit()
