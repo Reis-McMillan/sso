@@ -7,6 +7,7 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, RedirectResponse
 from sqlmodel import Session
+import json
 
 from config import config
 from database import get_session
@@ -231,18 +232,27 @@ async def federation_callback(
             headers={"Authorization": f"Bearer {access_token}"},
         )
 
+    userinfo: dict = None
     if userinfo_response.status_code != 200:
         logger.error(
             "Userinfo request failed for identity %s from %s: %s",
             fed_session.identity_id, provider_id, userinfo_response.text,
         )
         raise HTTPException(status_code=502, detail="Failed to fetch userinfo from upstream provider")
+    else: 
+        userinfo = userinfo_response.json()
+        logger.info(
+            "Successfully retireved userinfo from provider %s for %s: %s",
+            provider,
+            fed_session.identity_id,
+            json.dumps(userinfo, indent=4)
+        )
 
-    subject = userinfo_response.json().get("sub")
+    subject = userinfo.get("sub")
     if not subject:
         raise HTTPException(status_code=502, detail="Userinfo response missing sub claim")
     
-    email = userinfo_response.json().get('email')
+    email = userinfo.get('email')
     if not email:
         raise HTTPException(status_code=502, detail="Userinfo response missing email claim")
 
