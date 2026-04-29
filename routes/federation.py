@@ -507,6 +507,7 @@ async def _refresh_external_token(
         expires_at=expires_at,
         scopes_granted=ext_token.scopes_granted,
         subject=ext_token.subject,
+        email=ext_token.email,
     )
 
 # to-do implement route to delete token

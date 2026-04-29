@@ -111,26 +111,6 @@ def create_id_token(
         payload["name"] = f"{identity.first_name} {identity.last_name}"
         payload["origination"] = identity.origination.isoformat() if identity.origination else None
 
-    # Provider-backed scopes: collect external token subjects
-    tokens = []
-    provider_ids = set()
-    for s_name in client_scopes:
-        scope = Scope.get_by_name(session, s_name)
-        if scope and scope.provider_id:
-            provider_ids.add(scope.provider_id)
-    for pid in provider_ids:
-        provider_tokens = ExternalToken.get_all_for_user_by_provider(
-            session,
-            identity.id,
-            pid,
-        )
-        tokens.extend([
-            {"provider_id": t.provider_id, "subject": t.subject}
-            for t in provider_tokens
-        ])
-
-    if tokens:
-        payload["tokens"] = tokens
     if nonce:
         payload["nonce"] = nonce
     if access_token:

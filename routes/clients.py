@@ -45,11 +45,11 @@ async def _get_prm_uri(prm_uri: str, client_name: str, session: Session):
                 detail="Failed to retrieve OAuth metadata for client."
             )
         
-        result: dict = await response.json()
-        if not config.ISSUER in result.get('authorizatoin_servers', []):
+        result: dict = response.json()
+        if not config.ISSUER in result.get('authorization_servers', []):
             raise HTTPException(
                 status_code=400,
-                detail=f"Client must list {config.ISSUER} as authorizatoin server."
+                detail=f"Client must list {config.ISSUER} as authorization server."
             )
         
         if result.get('resource_name') != client_name:
@@ -81,7 +81,7 @@ async def create_client(
 
     required_scopes = []
     if body.prm_uri:
-        required_scopes = _get_prm_uri(body.prm_uri, body.client_name, session)
+        required_scopes = await _get_prm_uri(body.prm_uri, body.client_name, session)
 
     # Generate client credentials
     plain_secret = secrets.token_urlsafe(48) if not body.is_public else None
@@ -196,7 +196,7 @@ async def update_client(
             client_name = body.client_name
         else:
             client_name = client.client_name
-        required_scopes = _get_prm_uri(body.prm_uri, client_name, session)
+        required_scopes = await _get_prm_uri(body.prm_uri, client_name, session)
         client.prm_uri = body.prm_uri
         client.required_scopes = required_scopes
     if body.grant_types is not None:
