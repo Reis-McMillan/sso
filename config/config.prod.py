@@ -41,3 +41,4 @@ OPENOBSERVE_ENDPOINT = os.environ.get('OPENOBSERVE_ENDPOINT')
 _oo_user = os.environ.get('OPENOBSERVE_USER')
 _oo_token = os.environ.get('OPENOBSERVE_TOKEN')
 OPENOBSERVE_TOKEN = base64.b64encode(f"{_oo_user}:{_oo_token}".encode()).decode() if _oo_user and _oo_token else None
+ALLOWED_ORIGINS=['https://verys.mcmlln.dev', 'https://moneypenny.mcmlln.dev']
