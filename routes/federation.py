@@ -241,6 +241,7 @@ async def federation_callback(
         raise HTTPException(status_code=502, detail="Failed to fetch userinfo from upstream provider")
     else: 
         userinfo = userinfo_response.json()
+        print(userinfo)
         logger.info(
             "Successfully retireved userinfo from provider %s for %s.",
             provider,
