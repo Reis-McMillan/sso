@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta, timezone
 
-from models.oauth2_session import OAuth2Session, OAUTH2_SESSION_TTL
+from verys.models.oauth2_session import OAuth2Session, OAUTH2_SESSION_TTL
 
 
 def test_create(session):

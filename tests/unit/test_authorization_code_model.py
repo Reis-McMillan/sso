@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta, timezone
 
-from models.authorization_code import AuthorizationCode
+from verys.models.authorization_code import AuthorizationCode
 
 
 def test_create(session):

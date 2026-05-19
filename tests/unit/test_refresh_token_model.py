@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta, timezone
 
-from models.refresh_token import RefreshToken
+from verys.models.refresh_token import RefreshToken
 
 
 def test_create(session):

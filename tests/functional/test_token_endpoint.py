@@ -5,15 +5,15 @@ from urllib.parse import parse_qs, urlparse
 
 import jwt as pyjwt
 
-from config import config
-from models.authorization_code import AuthorizationCode
-from models.consent import Consent
-from models.identity import Identity
-from models.oauth2_client import OAuthClient
-from models.refresh_token import RefreshToken
-from utils.client_auth import hash_client_secret
-from utils.cookie import encrypt_cookie
-from utils.jwt import get_public_key_pem
+from verys.config import config
+from verys.models.authorization_code import AuthorizationCode
+from verys.models.consent import Consent
+from verys.models.identity import Identity
+from verys.models.oauth2_client import OAuthClient
+from verys.models.refresh_token import RefreshToken
+from verys.modules.client_auth import hash_client_secret
+from verys.modules.cookie import encrypt_cookie
+from verys.modules.jwt import get_public_key_pem
 
 
 def _create_client_and_code(session, **code_overrides):
@@ -74,7 +74,7 @@ def test_token_authorization_code(session, client):
 
     # Verify access token
     public_key = get_public_key_pem()
-    from models import Identity
+    from verys.models import Identity
     admin = Identity.get(session, 'admin@mcmlln.dev')
     decoded = pyjwt.decode(body['access_token'], public_key, algorithms=["EdDSA"], options={"verify_aud": False})
     assert decoded['sub'] == str(admin.id)

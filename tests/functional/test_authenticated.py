@@ -2,8 +2,8 @@ from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 import jwt as jwt_lib
 
-from app import app
-from utils.jwt import create_signed_jwt, _get_private_key
+from verys.app import app
+from verys.modules.jwt import create_signed_jwt, _get_private_key
 
 
 # ──────────────────────────────────────────────
@@ -50,7 +50,7 @@ def test_jwt_auth_missing_sub_claim(client):
 
 
 def test_jwt_auth_expired_signature(session, client):
-    from models import Identity
+    from verys.models import Identity
     admin = Identity.get(session, 'admin@mcmlln.dev')
     now = datetime.now(timezone.utc)
     payload = {

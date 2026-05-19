@@ -1,30 +1,24 @@
-FROM python:3.14-slim AS builder
-
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends gcc libc6-dev libpq-dev && \
-    rm -rf /var/lib/apt/lists/*
-
-WORKDIR /app
-
-COPY requirements.txt .
-RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
-
 FROM python:3.14-slim
 
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends libpq5 && \
+    apt-get install -y --no-install-recommends libpq5 libpq-dev gcc libc6-dev && \
     rm -rf /var/lib/apt/lists/*
 
-RUN addgroup --system --gid 1001 appgroup && adduser --system --uid 1001 --ingroup appgroup appuser
-USER appuser
-WORKDIR /home/appuser/app
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
-COPY --from=builder /install /usr/local
+WORKDIR /app
 
 ARG ENV=prod
-COPY --chown=appuser:appgroup . .
-RUN cp config/config.${ENV}.py config/config.py
+
+COPY pyproject.toml uv.lock ./
+RUN uv sync --frozen --no-install-project
+
+COPY src/ src/
+COPY alembic/ alembic/
+COPY alembic.ini ./
+RUN cp src/verys/config/config.${ENV}.py src/verys/config/config.py
+RUN uv sync --frozen
 
 EXPOSE 8080
 
-CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8080"]
+CMD [".venv/bin/uvicorn", "verys.app:app", "--host", "0.0.0.0", "--port", "8080"]

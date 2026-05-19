@@ -3,8 +3,8 @@ from pydantic import ValidationError
 import pytest
 from sqlalchemy.exc import IntegrityError
 
-from models import Identity
-from config import config
+from verys.models import Identity
+from verys.config import config
 
 def test_transform_email():
     res = Identity.transform_email(' Bob72@example.com ')

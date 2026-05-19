@@ -1,5 +1,3 @@
-import sys
-from pathlib import Path
 from logging.config import fileConfig
 
 from sqlalchemy import engine_from_config
@@ -7,11 +5,8 @@ from sqlalchemy import pool
 
 from alembic import context
 
-# Add the project root to sys.path so we can import our models
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-
-from config import config as app_config
-import models  # noqa: F401 — registers all models with SQLModel metadata
+from verys.config import config as app_config
+import verys.models  # noqa: F401 — registers all models with SQLModel metadata
 from sqlmodel import SQLModel
 
 # this is the Alembic Config object, which provides

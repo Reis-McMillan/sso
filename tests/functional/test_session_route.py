@@ -1,12 +1,12 @@
 import base64
 from datetime import datetime, timedelta, timezone
 
-from models.identity import Identity
-from models.oauth2_client import OAuthClient
-from models.refresh_token import RefreshToken
-from utils.client_auth import hash_client_secret
-from utils.cookie import encrypt_cookie
-from utils.jwt import create_id_token
+from verys.models.identity import Identity
+from verys.models.oauth2_client import OAuthClient
+from verys.models.refresh_token import RefreshToken
+from verys.modules.client_auth import hash_client_secret
+from verys.modules.cookie import encrypt_cookie
+from verys.modules.jwt import create_id_token
 
 
 def test_end_session_clears_cookies(session, client):

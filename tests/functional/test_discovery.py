@@ -1,4 +1,4 @@
-from config import config
+from verys.config import config
 
 
 def test_openid_configuration(client):

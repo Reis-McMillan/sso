@@ -7,8 +7,8 @@ Requires OPENOBSERVE_ENDPOINT and OPENOBSERVE_TOKEN environment variables to be 
 """
 import logging
 
-from config import config
-from utils.logging import OpenObserveHandler
+from verys.config import config
+from verys.modules.logging import OpenObserveHandler
 
 
 def test_log_ingestion():

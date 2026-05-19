@@ -1,8 +1,8 @@
 from datetime import datetime, timedelta, timezone
 from unittest.mock import patch, AsyncMock
 
-from config import config
-from models import Verification, Identity
+from verys.config import config
+from verys.models import Verification, Identity
 
 
 def _register(session, email: str):
@@ -19,7 +19,7 @@ def _register(session, email: str):
 
 def test_request_verification(client, session):
     _register(session, 'newuser@example.com')
-    with patch('routes.verification.aiosmtplib.send', new_callable=AsyncMock):
+    with patch('verys.routes.verification.aiosmtplib.send', new_callable=AsyncMock):
         res = client.post(
             '/verification',
             params={'email': 'newuser@example.com'}
@@ -29,7 +29,7 @@ def test_request_verification(client, session):
 
 def test_request_verification_creates_entry(client, session):
     _register(session, 'entrycheck@example.com')
-    with patch('routes.verification.aiosmtplib.send', new_callable=AsyncMock):
+    with patch('verys.routes.verification.aiosmtplib.send', new_callable=AsyncMock):
         client.post(
             '/verification',
             params={'email': 'entrycheck@example.com'}
@@ -138,7 +138,7 @@ def test_verify_non_numeric_code(client):
 
 def test_email_send_failure(client, session):
     _register(session, 'fail@example.com')
-    with patch('routes.verification.aiosmtplib.send', new_callable=AsyncMock, side_effect=Exception('SMTP error')):
+    with patch('verys.routes.verification.aiosmtplib.send', new_callable=AsyncMock, side_effect=Exception('SMTP error')):
         res = client.post(
             '/verification',
             params={'email': 'fail@example.com'}

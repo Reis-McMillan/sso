@@ -1,9 +1,9 @@
 import jwt as pyjwt
 from datetime import datetime, timedelta, timezone
 
-from models import Identity
-from utils.jwt import create_signed_jwt, _get_private_key
-from config import config
+from verys.models import Identity
+from verys.modules.jwt import create_signed_jwt, _get_private_key
+from verys.config import config
 
 
 def test_userinfo_get(session, client):

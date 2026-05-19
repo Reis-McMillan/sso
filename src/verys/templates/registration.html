@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Create account</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f5f5f5; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
+        .card { background: white; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); padding: 2rem; max-width: 400px; width: 90%; }
+        h1 { font-size: 1.5rem; margin-bottom: 0.5rem; }
+        .subtitle { color: #666; margin-bottom: 1.5rem; font-size: 0.9rem; }
+        label { display: block; font-weight: 500; margin-bottom: 0.3rem; font-size: 0.9rem; }
+        input[type="email"], input[type="text"] { width: 100%; padding: 0.6rem; border: 1px solid #ddd; border-radius: 4px; font-size: 1rem; margin-bottom: 1rem; }
+        .name-row { display: flex; gap: 0.75rem; }
+        .name-row > div { flex: 1; }
+        button { width: 100%; padding: 0.7rem; background: #2563eb; color: white; border: none; border-radius: 4px; font-size: 1rem; cursor: pointer; }
+        button:hover { background: #1d4ed8; }
+        .step { display: none; }
+        .step.active { display: block; }
+        .error { color: #dc2626; font-size: 0.85rem; margin-bottom: 0.5rem; display: none; }
+        .login-link { margin-top: 1rem; text-align: center; font-size: 0.9rem; color: #666; }
+        .login-link a { color: #2563eb; text-decoration: none; }
+        .login-link a:hover { text-decoration: underline; }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h1>Create account</h1>
+        {% if client_name %}
+        <p class="subtitle">{{ client_name }} is requesting access to your account.</p>
+        {% else %}
+        <p class="subtitle">Sign up to continue.</p>
+        {% endif %}
+
+        <div id="step-register" class="step active">
+            <form id="register-form">
+                <div class="name-row">
+                    <div>
+                        <label for="first_name">First name</label>
+                        <input type="text" id="first_name" name="first_name" required autofocus>
+                    </div>
+                    <div>
+                        <label for="last_name">Last name</label>
+                        <input type="text" id="last_name" name="last_name" required>
+                    </div>
+                </div>
+                <label for="email">Email address</label>
+                <input type="email" id="email" name="email" value="{{ email }}" required>
+                <div id="register-error" class="error"></div>
+                <button type="submit">Create account</button>
+            </form>
+        </div>
+
+        <div id="step-code" class="step">
+            <p style="margin-bottom: 1rem; font-size: 0.9rem;">A verification code has been sent to <strong id="sent-email"></strong>.</p>
+            <form id="code-form">
+                <label for="code">Verification code</label>
+                <input type="text" id="code" name="code" required pattern="[0-9]{6}" maxlength="6" inputmode="numeric">
+                <div id="code-error" class="error"></div>
+                <button type="submit">Verify</button>
+            </form>
+        </div>
+
+        {% if login_uri %}
+        <p class="login-link">
+            Already have an account? <a href="{{ login_uri }}?oauth2_session={{ oauth2_session_id }}">Sign in</a>
+        </p>
+        {% endif %}
+    </div>
+
+    <script>
+        const sessionId = "{{ oauth2_session_id }}";
+
+        document.getElementById("register-form").addEventListener("submit", async (e) => {
+            e.preventDefault();
+            const first_name = document.getElementById("first_name").value;
+            const last_name = document.getElementById("last_name").value;
+            const email = document.getElementById("email").value;
+            const errorEl = document.getElementById("register-error");
+            errorEl.style.display = "none";
+
+            try {
+                const resp = await fetch(`{{ issuer }}/register/`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        first_name,
+                        last_name,
+                        email,
+                        oauth2_session_id: sessionId || null,
+                    }),
+                });
+                if (!resp.ok) {
+                    const data = await resp.json().catch(() => ({}));
+                    errorEl.textContent = data.detail || "Failed to register.";
+                    errorEl.style.display = "block";
+                    return;
+                }
+                document.getElementById("sent-email").textContent = email;
+                document.getElementById("step-register").classList.remove("active");
+                document.getElementById("step-code").classList.add("active");
+                document.getElementById("code").focus();
+            } catch (err) {
+                errorEl.textContent = "An error occurred.";
+                errorEl.style.display = "block";
+            }
+        });
+
+        document.getElementById("code-form").addEventListener("submit", async (e) => {
+            e.preventDefault();
+            const email = document.getElementById("email").value;
+            const code = document.getElementById("code").value;
+            const errorEl = document.getElementById("code-error");
+            errorEl.style.display = "none";
+
+            try {
+                const resp = await fetch(
+                    `{{ issuer }}/verification?email=${encodeURIComponent(email)}&code=${encodeURIComponent(code)}&oauth2_session=${encodeURIComponent(sessionId)}`,
+                    { method: "GET", redirect: "follow" }
+                );
+                if (resp.redirected) {
+                    window.location.href = resp.url;
+                    return;
+                }
+                if (!resp.ok) {
+                    errorEl.textContent = "Invalid or expired code.";
+                    errorEl.style.display = "block";
+                    return;
+                }
+                window.location.href = resp.url || window.location.href;
+            } catch (err) {
+                errorEl.textContent = "An error occurred.";
+                errorEl.style.display = "block";
+            }
+        });
+    </script>
+</body>
+</html>

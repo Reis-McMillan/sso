@@ -9,7 +9,7 @@ import asyncio
 import aiosmtplib
 from email.message import EmailMessage
 
-from config import config
+from verys.config import config
 
 
 async def test_email():

@@ -2,8 +2,8 @@ from datetime import datetime, timedelta, timezone
 from urllib.parse import quote
 import jwt
 
-from models import Identity
-from utils.jwt import create_signed_jwt
+from verys.models import Identity
+from verys.modules.jwt import create_signed_jwt
 
 
 def _ensure_identity(session, email, roles=None):

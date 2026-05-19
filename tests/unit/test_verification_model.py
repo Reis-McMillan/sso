@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from models import Verification
+from verys.models import Verification
 
 
 def test_make_code():

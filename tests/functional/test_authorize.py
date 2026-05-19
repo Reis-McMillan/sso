@@ -1,11 +1,11 @@
 from datetime import datetime, timedelta, timezone
 from urllib.parse import parse_qs, urlparse
 
-from models.consent import Consent
-from models.oauth2_client import OAuthClient
-from models.oauth2_session import OAuth2Session
-from utils.client_auth import hash_client_secret
-from utils.cookie import encrypt_cookie
+from verys.models.consent import Consent
+from verys.models.oauth2_client import OAuthClient
+from verys.models.oauth2_session import OAuth2Session
+from verys.modules.client_auth import hash_client_secret
+from verys.modules.cookie import encrypt_cookie
 
 
 def _create_test_client(session, client_name="Auth Test App", redirect_uri="https://authtest.example.com/callback", scopes=None):

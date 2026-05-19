@@ -3,11 +3,11 @@ from fastapi.testclient import TestClient
 import pytest
 from sqlmodel import SQLModel
 
-from app import app
-from database import initialize_db, get_session, engine
-from models import Identity
-from utils.cookie import encrypt_cookie
-from utils.jwt import create_signed_jwt
+from verys.app import app
+from verys.database import initialize_db, get_session, engine
+from verys.models import Identity
+from verys.modules.cookie import encrypt_cookie
+from verys.modules.jwt import create_signed_jwt
 
 
 @pytest.fixture(scope="module")

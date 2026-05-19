@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from models.consent import Consent
+from verys.models.consent import Consent
 
 
 def test_grant(session):

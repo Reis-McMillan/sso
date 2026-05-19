@@ -1,4 +1,4 @@
-from utils.jwt import create_signed_jwt
+from verys.modules.jwt import create_signed_jwt
 
 
 def test_create_client(admin_jwt, client):
@@ -39,7 +39,7 @@ def test_create_public_client(admin_jwt, client):
 
 
 def test_create_client_no_admin(client, session):
-    from models import Identity
+    from verys.models import Identity
     svc = Identity.get(session, 'service@mcmlln.dev')
     jwt = create_signed_jwt(svc, ['openid'])
     res = client.post(
@@ -65,7 +65,7 @@ def test_list_clients(admin_jwt, client):
 
 
 def test_list_clients_no_admin(client, session):
-    from models import Identity
+    from verys.models import Identity
     svc = Identity.get(session, 'service@mcmlln.dev')
     jwt = create_signed_jwt(svc, ['openid'])
     res = client.get(
