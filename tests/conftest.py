@@ -5,7 +5,7 @@ from sqlmodel import SQLModel
 
 from verys.app import app
 from verys.database import initialize_db, get_session, engine
-from verys.models import Identity
+from verys.models import Identity, Role, IdentityRole
 from verys.modules.cookie import encrypt_cookie
 from verys.modules.jwt import create_signed_jwt
 
@@ -37,7 +37,7 @@ def session():
 
     session = next(get_session())
 
-    admin = Identity.new(
+    admin_user = Identity.new(
         session,
         'Admin',
         'User',
@@ -45,9 +45,9 @@ def session():
         'paris_people',
         datetime.now(timezone.utc) + timedelta(days=30),
     )
-    admin.email_verified = True
-    session.add(admin)
-    service = Identity.new(
+    admin_user.email_verified = True
+    session.add(admin_user)
+    service_user = Identity.new(
         session,
         'Service',
         'Account',
@@ -55,20 +55,25 @@ def session():
         'jd vance erika kirk baby',
         datetime.now(timezone.utc) + timedelta(days=30),
     )
-    service.email_verified = True
-    session.add(service)
+    service_user.email_verified = True
+    session.add(service_user)
     session.commit()
 
-    Identity.update(
+    admin_role = Role.new(session, 'admin')
+    service_account_role = Role.new(session, 'service-account')
+    
+    IdentityRole.add_identity_role(
         session,
-        'admin@mcmlln.dev',
-        new_roles=['admin']
+        admin_user.id,
+        admin_role.id
     )
-    Identity.update(
+    session.refresh(admin_user)
+    IdentityRole.add_identity_role(
         session,
-        'service@mcmlln.dev',
-        new_roles=['service-account']
+        service_user.id,
+        service_account_role.id
     )
+    session.refresh(service_user)
 
     yield session
 

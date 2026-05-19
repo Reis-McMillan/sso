@@ -9,7 +9,7 @@ from typing import List, Optional
 from urllib.parse import quote
 
 from verys.database import get_session
-from verys.models.identity import Identity, Role
+from verys.models.identity import Identity
 from verys.config import config
 
 logger = logging.getLogger("verys.identity")
@@ -21,7 +21,7 @@ async def get_all_identities(
     request: Request = None,
     session: Session = Depends(get_session)
 ):
-    if "admin" not in request.state.identity.roles:
+    if "admin" not in request.state.identity_roles:
         logger.warning("Forbidden: %s tried to list all identities", request.state.identity.email)
         raise HTTPException(status_code=403, detail="Not authorized to perform this action.")
 
@@ -37,7 +37,7 @@ async def create_identity(
     request: Request = None,
     session: Session = Depends(get_session),
 ):
-    if "admin" not in request.state.identity.roles:
+    if "admin" not in request.state.identity_roles:
         logger.warning("Forbidden: %s tried to create identity", request.state.identity.email)
         raise HTTPException(status_code=403, detail="Not authorized to perform this action.")
 
@@ -66,7 +66,7 @@ async def get_identity(
 ):
     r = Identity.get(session, email)
 
-    if "admin" not in request.state.identity.roles:
+    if "admin" not in request.state.identity_roles:
         logger.warning("Forbidden: %s tried to get identity %s", request.state.identity.email, email)
         raise HTTPException(status_code=403, detail="Not authorized to perform this action.")
     
@@ -80,7 +80,6 @@ class IdentityUpdate(BaseModel):
     new_email: Optional[str] = None
     new_key: Optional[str] = None
     new_expires: Optional[datetime] = None
-    new_roles: Optional[list[Role]] = None
 
 @router.put("/{email}", status_code=201)
 async def update_identity(
@@ -89,7 +88,7 @@ async def update_identity(
     request: Request = None,
     session: Session = Depends(get_session),
 ):
-    if "admin" not in request.state.identity.roles:
+    if "admin" not in request.state.identity_roles:
         logger.warning("Forbidden: %s tried to update identity %s", request.state.identity.email, email)
         raise HTTPException(status_code=403, detail="Not authorized to perform this action.")
 
@@ -100,7 +99,6 @@ async def update_identity(
             new_email=update.new_email,
             new_key=update.new_key,
             new_expires=update.new_expires,
-            new_roles=update.new_roles
         )
     except ValidationError as e:
         logger.warning("Identity update failed: validation error for %s - %s", email, e)
@@ -119,7 +117,7 @@ async def delete_identity(
     request: Request = None,
     session: Session = Depends(get_session)
 ):
-    if "admin" not in request.state.identity.roles:
+    if "admin" not in request.state.identity_roles:
         logger.warning("Forbidden: %s tried to delete identity %s", request.state.identity.email, email)
         raise HTTPException(status_code=403, detail="Not authorized to perform this action.")
 
@@ -150,7 +148,7 @@ async def logout_identity(
     request: Request,
     session: Session = Depends(get_session)
 ):
-    if "admin" not in request.state.identity.roles:
+    if "admin" not in request.state.identity_roles:
         logger.warning("Forbidden: %s tried to logout identity %s", request.state.identity.email, id)
         raise HTTPException(status_code=403, detail="Not authorized to perform this action.")
 

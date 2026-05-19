@@ -8,9 +8,22 @@ from verys.config import config
 from verys.middleware.authenticated import authenticate_user
 from verys.middleware.logging import RequestLoggingMiddleware
 from verys.database import initialize_db, get_session
-from verys.models.oauth2_client import OAuthClient
-from verys.models.scope import Scope
-from verys.routes import identity, jwks, verification, discovery, oauth2, userinfo, session, clients, scopes, providers, federation, registration
+from verys.models import Scope, Role, OAuthClient
+from verys.routes import (
+    identity,
+    jwks,
+    verification,
+    discovery,
+    oauth2,
+    userinfo,
+    session,
+    clients,
+    scopes,
+    providers,
+    federation,
+    registration,
+    roles
+)
 from verys.modules.logging import setup_logging, shutdown_logging
 
 
@@ -18,10 +31,9 @@ from verys.modules.logging import setup_logging, shutdown_logging
 async def lifespan(app: FastAPI):
     setup_logging()
     initialize_db()
-    # Seed standard OIDC scopes
     for db_session in get_session():
+        Role.seed_roles(db_session)
         Scope.seed_oidc_scopes(db_session)
-        # Seed Verys public client
         verys_client = OAuthClient.get_by_client_id(db_session, config.VERYS_CLIENT_ID)
         if not verys_client:
             verys_client = OAuthClient(
@@ -82,3 +94,4 @@ app.include_router(identity.router, dependencies=[Depends(authenticate_user)])
 app.include_router(clients.router, dependencies=[Depends(authenticate_user)])
 app.include_router(scopes.router, dependencies=[Depends(authenticate_user)])
 app.include_router(providers.router, dependencies=[Depends(authenticate_user)])
+app.include_router(roles.router, dependencies=[Depends(authenticate_user)])

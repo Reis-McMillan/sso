@@ -48,8 +48,9 @@ def try_authenticate(
         if not identity:
             logger.warning("Auth failed: no identity for id %s", identity_id)
             return None
-
+        
         request.state.identity = identity
+        request.state.identity_roles = {r.name for r in identity.roles}
         request.state.token_scopes = decoded.get("scopes", [])
         logger.info("Authenticated %s via JWT", identity.email)
         return identity

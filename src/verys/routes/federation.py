@@ -354,7 +354,7 @@ async def get_user_external_tokens(
     identity_id: int,
     session: Session = Depends(get_session)
 ):
-    if not "admin" in request.state.identity.roles:
+    if not "admin" in request.state.identity_roles:
         raise HTTPException(
             status_code=403,
             detail="Not authorized to perform this action."
@@ -399,14 +399,14 @@ async def get_external_token(
     if not ext_token:
         raise HTTPException(status_code=404, detail="External token not found")
     if (ext_token.identity_id != identity_id
-        and not "admin" in request.state.identity.roles):
+        and not "admin" in request.state.identity_roles):
         raise HTTPException(
             status_code=403,
             detail="Unauthorized to perform this action."
         )
     # Check scope
     if (not ext_token.provider_id in scoped_providers
-        and not "admin" in request.state.identity.roles):
+        and not "admin" in request.state.identity_roles):
         raise HTTPException(
             status_code=403,
             detail="Access not granted for this token."
@@ -528,13 +528,13 @@ async def delete_external_token(
             detail="External token not found."
         )
     if (ext_token.identity_id != identity_id
-        and not "admin" in request.state.identity.roles):
+        and not "admin" in request.state.identity_roles):
         raise HTTPException(
             status_code=403,
             detail="Unauthorized to perform this action."
         )
     if (not ext_token.provider_id in scoped_providers
-        and not "admin" in request.state.identity.roles):
+        and not "admin" in request.state.identity_roles):
         raise HTTPException(
             status_code=403,
             detail="Access not granted for this token."

@@ -71,7 +71,7 @@ async def create_client(
     body: ClientCreateRequest,
     session: Session = Depends(get_session),
 ):
-    if "admin" not in request.state.identity.roles:
+    if "admin" not in request.state.identity_roles:
         raise HTTPException(status_code=403, detail="Admin access required")
 
     # Validate scopes exist in the database
@@ -123,7 +123,7 @@ async def list_clients(
     request: Request,
     session: Session = Depends(get_session),
 ):
-    if "admin" not in request.state.identity.roles:
+    if "admin" not in request.state.identity_roles:
         raise HTTPException(status_code=403, detail="Admin access required")
 
     clients = OAuthClient.all(session)
@@ -147,7 +147,7 @@ async def get_client(
     request: Request,
     session: Session = Depends(get_session),
 ):
-    if "admin" not in request.state.identity.roles:
+    if "admin" not in request.state.identity_roles:
         raise HTTPException(status_code=403, detail="Admin access required")
 
     client = OAuthClient.get_by_client_id(session, client_id)
@@ -175,7 +175,7 @@ async def update_client(
     request: Request,
     session: Session = Depends(get_session),
 ):
-    if "admin" not in request.state.identity.roles:
+    if "admin" not in request.state.identity_roles:
         raise HTTPException(status_code=403, detail="Admin access required")
 
     client = OAuthClient.get_by_client_id(session, client_id)
@@ -220,7 +220,7 @@ async def delete_client(
     request: Request,
     session: Session = Depends(get_session),
 ):
-    if "admin" not in request.state.identity.roles:
+    if "admin" not in request.state.identity_roles:
         raise HTTPException(status_code=403, detail="Admin access required")
 
     client = OAuthClient.get_by_client_id(session, client_id)

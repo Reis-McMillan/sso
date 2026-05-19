@@ -563,7 +563,6 @@ async def _handle_authorization_code_grant(
 
     # Generate ID token
     id_token = create_id_token(
-        session=session,
         identity=identity,
         client_id=client.client_id,
         client_scopes=client.allowed_scopes,
@@ -646,7 +645,6 @@ async def _handle_refresh_token_grant(
     # Generate new ID token
     auth_time = identity.last_auth_time or datetime.now(timezone.utc)
     id_token = create_id_token(
-        session=session,
         identity=identity,
         client_id=client.client_id,
         client_scopes=client.allowed_scopes,

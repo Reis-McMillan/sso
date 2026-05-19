@@ -67,7 +67,7 @@ def create_signed_jwt(
         "iss": config.ISSUER,
         "sub": str(identity.id),
         "aud": config.ISSUER if not audience else audience,
-        "roles": [r.value if hasattr(r, "value") else r for r in identity.roles],
+        "roles": [r.name for r in identity.roles],
         "iat": now,
         "exp": now + timedelta(seconds=config.JWT_EXPIRY),
         "scopes": scopes,
@@ -81,7 +81,6 @@ def create_signed_jwt(
 
 
 def create_id_token(
-    session: Session,
     identity: Identity,
     client_id: str,
     client_scopes: list[str],
@@ -116,7 +115,7 @@ def create_id_token(
     if access_token:
         payload["at_hash"] = _compute_at_hash(access_token)
     if identity.roles:
-        payload["roles"] = [r.value if hasattr(r, "value") else r for r in identity.roles]
+        payload["roles"] = [r.name for r in identity.roles]
 
     return jwt.encode(
         payload,

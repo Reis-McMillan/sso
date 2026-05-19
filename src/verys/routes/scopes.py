@@ -29,7 +29,7 @@ async def create_scope(
     body: ScopeCreateRequest,
     session: Session = Depends(get_session),
 ):
-    if "admin" not in request.state.identity.roles:
+    if "admin" not in request.state.identity_roles:
         raise HTTPException(status_code=403, detail="Admin access required")
 
     existing = Scope.get_by_name(session, body.name)
@@ -60,7 +60,7 @@ async def list_scopes(
     request: Request,
     session: Session = Depends(get_session),
 ):
-    if "admin" not in request.state.identity.roles:
+    if "admin" not in request.state.identity_roles:
         raise HTTPException(status_code=403, detail="Admin access required")
 
     scopes = Scope.all(session)
@@ -82,7 +82,7 @@ async def get_scope(
     request: Request,
     session: Session = Depends(get_session),
 ):
-    if "admin" not in request.state.identity.roles:
+    if "admin" not in request.state.identity_roles:
         raise HTTPException(status_code=403, detail="Admin access required")
 
     scope = Scope.get_by_name(session, name)
@@ -105,7 +105,7 @@ async def update_scope(
     request: Request,
     session: Session = Depends(get_session),
 ):
-    if "admin" not in request.state.identity.roles:
+    if "admin" not in request.state.identity_roles:
         raise HTTPException(status_code=403, detail="Admin access required")
 
     scope = Scope.get_by_name(session, name)
@@ -131,7 +131,7 @@ async def delete_scope(
     request: Request,
     session: Session = Depends(get_session),
 ):
-    if "admin" not in request.state.identity.roles:
+    if "admin" not in request.state.identity_roles:
         raise HTTPException(status_code=403, detail="Admin access required")
 
     if name in ("openid", "profile", "email"):

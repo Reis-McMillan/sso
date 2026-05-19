@@ -43,7 +43,7 @@ async def create_provider(
     body: ProviderCreateRequest,
     session: Session = Depends(get_session),
 ):
-    if "admin" not in request.state.identity.roles:
+    if "admin" not in request.state.identity_roles:
         raise HTTPException(status_code=403, detail="Admin access required")
 
     existing = ExternalProvider.get_by_provider_id(session, body.provider_id)
@@ -152,7 +152,7 @@ async def update_provider(
     request: Request,
     session: Session = Depends(get_session),
 ):
-    if "admin" not in request.state.identity.roles:
+    if "admin" not in request.state.identity_roles:
         raise HTTPException(status_code=403, detail="Admin access required")
 
     provider = ExternalProvider.get_by_provider_id(session, provider_id)
@@ -188,7 +188,7 @@ async def delete_provider(
     request: Request,
     session: Session = Depends(get_session),
 ):
-    if "admin" not in request.state.identity.roles:
+    if "admin" not in request.state.identity_roles:
         raise HTTPException(status_code=403, detail="Admin access required")
 
     provider = ExternalProvider.get_by_provider_id(session, provider_id)

@@ -1,18 +1,15 @@
 import uuid
 from datetime import datetime, timezone
-from typing import List
-from enum import Enum
-from pydantic import EmailStr, field_serializer, field_validator
-from sqlalchemy import Column, ARRAY, String, DateTime
-from sqlmodel import Field, SQLModel, Session, select
+from typing import List, TYPE_CHECKING
+from pydantic import EmailStr, field_validator
+from sqlalchemy import Column, DateTime
+from sqlmodel import Field, SQLModel, Session, select, Relationship
 
-from verys.config import config
+from verys.models.identity_role import IdentityRole
 
-class Role(str, Enum):
-    ADMIN = 'admin'
-    SERVICE_ACCOUNT = 'service-account'
-    COIN_MANAGER = 'coin-manager'
-    DEFAULT = 'default'
+if TYPE_CHECKING:
+    from verys.models.role import Role
+
 
 class Identity(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
@@ -33,9 +30,8 @@ class Identity(SQLModel, table=True):
         default=None,
         sa_column=Column(DateTime(timezone=True)),
     )
-    roles: List[Role] = Field(
-        default_factory=lambda: [Role.DEFAULT],
-        sa_column=Column(ARRAY(String))
+    roles: List["Role"] = Relationship(
+        back_populates="identities", link_model=IdentityRole
     )
 
     @field_validator('email', mode='before')
@@ -44,10 +40,6 @@ class Identity(SQLModel, table=True):
         if isinstance(v, str):
             return v.strip().lower()
         return v
-
-    @field_serializer('roles')
-    def serialize_roles(self, roles: List[Role]) -> List[str]:
-        return [r.value if isinstance(r, Role) else r for r in roles]
 
     @staticmethod
     def make_auth_key() -> str:
@@ -83,9 +75,13 @@ class Identity(SQLModel, table=True):
         return session.exec(statement).first()
 
     @classmethod
-    def get_by_id(cls, session: Session, id: int):
-        statement = select(cls).where(cls.id == id, cls.closed == False)
-        return session.exec(statement).first()
+    def get_by_id(cls, session: Session, id: int | List[int]):
+        if isinstance(id, int):
+            statement = select(cls).where(cls.id == id, cls.closed == False)
+            return session.exec(statement).first()
+        elif isinstance(id, list):
+            statement = select(cls).where(cls.id.in_(id), cls.closed == False)
+            return list(session.exec(statement).all())
 
     @classmethod
     def close(cls, session: Session, email: str):
@@ -106,35 +102,25 @@ class Identity(SQLModel, table=True):
         new_email: str = None,
         new_key: str = None,
         new_expires: datetime = None,
-        new_roles: list[Role] = None
     ):
         email = cls.transform_email(email)
         db_identity = cls.get(session, email)
         if not db_identity:
             return None
-        if new_roles is not None and len(new_roles) == 0:
-            new_roles = [Role.DEFAULT]
-        if db_identity:
-            validated = cls.model_validate({
-                "first_name": db_identity.first_name,
-                "last_name": db_identity.last_name,
-                "email": new_email if new_email else db_identity.email,
-                "auth_key": new_key if new_key else db_identity.auth_key,
-                "expires": new_expires if new_expires else db_identity.expires,
-                "roles": new_roles if new_roles is not None else db_identity.roles,
-            })
-            db_identity.email = validated.email
-            db_identity.auth_key = validated.auth_key
-            db_identity.expires = validated.expires
-            db_identity.roles = validated.roles
-            session.add(db_identity)
-            session.commit()
-            session.refresh(db_identity)
+        validated = cls.model_validate({
+            "first_name": db_identity.first_name,
+            "last_name": db_identity.last_name,
+            "email": new_email if new_email else db_identity.email,
+            "auth_key": new_key if new_key else db_identity.auth_key,
+            "expires": new_expires if new_expires else db_identity.expires,
+        })
+        db_identity.email = validated.email
+        db_identity.auth_key = validated.auth_key
+        db_identity.expires = validated.expires
+        session.add(db_identity)
+        session.commit()
+        session.refresh(db_identity)
         return db_identity
-
-    @classmethod
-    def update_roles(cls, session: Session, email: str, roles: list[Role]):
-        return cls.update(session, email, new_roles=roles)
 
     @classmethod
     def all(cls, session: Session):

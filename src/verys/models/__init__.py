@@ -1,3 +1,4 @@
+from .identity_role import IdentityRole
 from .identity import Identity
 from .verification import Verification
 from .oauth2_client import OAuthClient
@@ -9,6 +10,7 @@ from .scope import Scope
 from .external_provider import ExternalProvider
 from .external_token import ExternalToken
 from .federation_session import FederationSession
+from .role import Role
 
 __all__ = [
     'Identity',
@@ -22,4 +24,6 @@ __all__ = [
     'ExternalProvider',
     'ExternalToken',
     'FederationSession',
+    'IdentityRole',
+    'Role'
 ]
