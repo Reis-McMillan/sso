@@ -577,8 +577,7 @@ async def _handle_authorization_code_grant(
         client_id=client.client_id,
         identity_id=identity.id,
         scopes=auth_code.scopes,
-        expires_at=datetime.now(timezone.utc)
-        + timedelta(seconds=config.REFRESH_TOKEN_TTL),
+        expires_at=identity.expires,
     )
     session.add(rt)
     session.commit()
@@ -661,8 +660,7 @@ async def _handle_refresh_token_grant(
         client_id=client.client_id,
         identity_id=identity.id,
         scopes=rt.scopes,
-        expires_at=datetime.now(timezone.utc)
-        + timedelta(seconds=config.REFRESH_TOKEN_TTL),
+        expires_at=identity.expires
     )
     session.add(new_rt)
     session.flush()

@@ -19,8 +19,6 @@ USERNAME_SMTP = os.environ.get('USERNAME_SMTP')
 PASSWORD_SMTP = os.environ.get('PASSWORD_SMTP')
 SMTP_ENDPOINT = 'smtp.email.us-chicago-1.oci.oraclecloud.com'
 SMTP_PORT = 587
-VERIFY_DELTA = 5 * 60 # 5 minutes
-AUTHENTICATION_TTL = 60 * 24 * 60 * 60 # 60 days
 VERIFY_BASE_URL = os.environ.get('VERIFY_BASE_URL')
 ENCRYPT_COOKIE_NAME = 'token'
 ENCRYPT_COOKIE_KEY = 'YWJjZDEyMzRhYmNkMTIzNGFiY2QxMjM0YWJjZDEyMzQ='
@@ -29,8 +27,9 @@ COOKIE_DOMAIN = None
 JWT_EXPIRY = 5 * 60 # 5 minutes
 JWT_PRIVATE_KEY = os.environ.get('JWT_PRIVATE_KEY')
 ISSUER = 'http://localhost:8080'
+VERIFY_TTL = 5 * 60 # 5 minutes
+AUTHENTICATION_TTL = 60 * 24 * 60 * 60 # 60 days
 AUTHORIZATION_CODE_TTL = 60  # seconds
-REFRESH_TOKEN_TTL = 30 * 24 * 60 * 60  # 30 days
 ID_TOKEN_EXPIRY = 5 * 60  # 5 minutes
 FIELD_ENCRYPTION_KEY = 'YWJjZDEyMzRhYmNkMTIzNGFiY2QxMjM0YWJjZDEyMzQ='
 VERYS_CLIENT_ID = os.environ.get('VERYS_CLIENT_ID')
