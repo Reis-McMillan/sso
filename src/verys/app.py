@@ -33,7 +33,7 @@ async def lifespan(app: FastAPI):
     initialize_db()
     for db_session in get_session():
         Role.seed_roles(db_session)
-        Scope.seed_scopes(db_session)
+        Scope.seed_oidc_scopes(db_session)
         verys_client = OAuthClient.get_by_client_id(db_session, config.VERYS_CLIENT_ID)
         if not verys_client:
             verys_client = OAuthClient(

@@ -6,7 +6,7 @@ from verys.models import Identity
 from verys.modules.jwt import create_signed_jwt
 
 
-def _ensure_identity(session, email, roles=None):
+def _ensure_identity(session, email):
     """Fetch or create a non-admin identity for JWT tests."""
     identity = Identity.get(session, email)
     if identity is None:
@@ -18,8 +18,6 @@ def _ensure_identity(session, email, roles=None):
             Identity.make_auth_key(),
             datetime.now(timezone.utc) + timedelta(days=30),
         )
-    if roles is not None:
-        identity = Identity.update(session, email, new_roles=roles)
     return identity
 
 
@@ -103,8 +101,6 @@ def test_get_admin(admin_jwt, client):
     assert res.status_code == 200
     res_json = res.json()
     assert res_json['email'] == 'stewie.griffin@quahog.com'
-    assert 'default' in res_json['roles']
-    assert len(res_json['roles']) == 1
     assert res_json['closed'] == False
 
 

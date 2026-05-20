@@ -53,7 +53,6 @@ def test_end_session_with_id_token_hint(session, client):
 
     # Create id_token_hint
     id_token = create_id_token(
-        session=session,
         identity=admin,
         client_id=oa.client_id,
         client_scopes=["openid"],
@@ -87,7 +86,6 @@ def test_end_session_with_redirect(session, client):
     session.refresh(oa)
 
     id_token = create_id_token(
-        session=session,
         identity=admin,
         client_id=oa.client_id,
         client_scopes=["openid"],
@@ -122,7 +120,6 @@ def test_end_session_redirect_invalid_uri(session, client):
     session.refresh(oa)
 
     id_token = create_id_token(
-        session=session,
         identity=admin,
         client_id=oa.client_id,
         client_scopes=["openid"],

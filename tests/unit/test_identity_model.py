@@ -3,7 +3,7 @@ from pydantic import ValidationError
 import pytest
 from sqlalchemy.exc import IntegrityError
 
-from verys.models import Identity
+from verys.models import Identity, Role, IdentityRole
 from verys.config import config
 
 def test_transform_email():
@@ -31,7 +31,7 @@ def test_new(session):
     assert res.auth_key == auth_key
     assert res.expires == expires
     assert res.origination <= datetime.now(timezone.utc)
-    assert res.roles == ['default']
+    assert res.roles == []
     assert res.closed == False
 
 
@@ -104,16 +104,19 @@ def test_update_new_expires(session):
     assert res.expires == new_expires
 
 
-def test_update_roles(session):
-    res = Identity.update_roles(session, 'newemail@example.com', ['admin'])
-    assert 'admin' in res.roles
+def test_assign_role(session):
+    identity = Identity.get(session, 'newemail@example.com')
+    role = Role.get(session, 'admin')
+    IdentityRole.add_identity_role(session, identity.id, role.id)
+
+    session.refresh(identity)
+    assert [r.name for r in identity.roles] == ['admin']
 
 
 def test_update_all(session):
     new_email = 'bob73@example.com'
     new_auth_key = Identity.make_auth_key()
     new_expires = datetime.now(timezone.utc) + timedelta(seconds=1000)
-    new_roles = ['service-account']
     res = Identity.update(
         session,
         'newemail@example.com',
