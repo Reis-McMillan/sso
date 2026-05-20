@@ -7,6 +7,7 @@ RUN apt-get update && \
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
 WORKDIR /app
+ENV PATH="/app/.venv/bin:$PATH"
 
 ARG ENV=prod
 
