@@ -15,7 +15,7 @@ RUN uv sync --frozen --no-install-project
 
 COPY src/ src/
 COPY alembic/ alembic/
-COPY alembic.ini ./
+COPY alembic.ini README.md LICENSE ./
 RUN cp src/verys/config/config.${ENV}.py src/verys/config/config.py
 RUN uv sync --frozen
 
