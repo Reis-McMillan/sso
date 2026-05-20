@@ -30,13 +30,16 @@ jobs:
           python-version: "3.14"
           allow-prereleases: true
 
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
       - name: Install dependencies
         run: |
           sudo apt-get update && sudo apt-get install -y libpq-dev
-          pip install -r requirements.txt
+          uv sync --frozen --extra dev
 
       - name: Use test config
-        run: cp config/config.test.py config/config.py
+        run: cp src/verys/config/config.test.py src/verys/config/config.py
 
       - name: Generate test JWT key
         run: |
@@ -46,7 +49,7 @@ jobs:
           echo "EOF" >> $GITHUB_ENV
 
       - name: Run tests
-        run: python -m pytest tests/
+        run: uv run pytest tests/
 
   build-and-push:
     needs: test
