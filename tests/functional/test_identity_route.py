@@ -27,7 +27,7 @@ def test_all(admin_jwt, client):
         headers={'Authorization': f'Bearer {admin_jwt}'}
     )
     assert res.status_code == 200
-    assert len(res.json()) == 2
+    assert len(res.json()['identities']) == 2
 
 
 def test_all_no_admin(client, session):
@@ -45,7 +45,7 @@ def test_all_no_admin(client, session):
         headers={'Authorization': f'Bearer {jwt}'}
     )
     assert res.status_code == 403
-    assert res.json()['detail'] == 'Not authorized to perform this action.'
+    assert res.json()['error'] == 'Not authorized to perform this action.'
 
 
 def test_create(admin_jwt, client):
@@ -89,7 +89,7 @@ def test_create_no_admin(client, session):
         params={'email': 'louis.griffin@quahog.com'}
     )
     assert res.status_code == 403
-    assert res.json()['detail'] == 'Not authorized to perform this action.'
+    assert res.json()['error'] == 'Not authorized to perform this action.'
 
 
 def test_get_admin(admin_jwt, client):
@@ -111,7 +111,7 @@ def test_get_not_found(admin_jwt, client):
         headers={'Authorization': f'Bearer {admin_jwt}'},
     )
     assert res.status_code == 404
-    assert res.json()['detail'] == 'Identity not found'
+    assert res.json()['error'] == 'Identity not found'
 
 
 def test_get_not_admin(client, session):
@@ -123,7 +123,7 @@ def test_get_not_admin(client, session):
         headers={'Authorization': f'Bearer {jwt}'},
     )
     assert res.status_code == 403
-    assert res.json()['detail'] == 'Not authorized to perform this action.'
+    assert res.json()['error'] == 'Not authorized to perform this action.'
 
 
 def test_update(admin_jwt, client):
@@ -148,7 +148,7 @@ def test_update_no_admin(client, session):
         json={'new_expires': expires}
     )
     assert res.status_code == 403
-    assert res.json()['detail'] == 'Not authorized to perform this action.'
+    assert res.json()['error'] == 'Not authorized to perform this action.'
 
 
 def test_update_no_params(admin_jwt, client):
@@ -172,7 +172,7 @@ def test_update_no_id(admin_jwt, client):
         json={'new_expires': expires}
     )
     assert res.status_code == 404
-    assert res.json()['detail'] == 'No Identity found.'
+    assert res.json()['error'] == 'No Identity found.'
 
 
 def test_delete(admin_jwt, client):
@@ -181,7 +181,7 @@ def test_delete(admin_jwt, client):
         f'/identity/{email}',
         headers={'Authorization': f'Bearer {admin_jwt}'},
     )
-    assert res.status_code == 204
+    assert res.status_code == 200
 
 
 def test_delete_no_id(admin_jwt, client):
@@ -191,7 +191,7 @@ def test_delete_no_id(admin_jwt, client):
         headers={'Authorization': f'Bearer {admin_jwt}'},
     )
     assert res.status_code == 404
-    assert res.json()['detail'] == "Identity not found"
+    assert res.json()['error'] == "Identity not found"
 
 
 def test_delete_not_admin(client, session):
@@ -202,7 +202,7 @@ def test_delete_not_admin(client, session):
         headers={'Authorization': f'Bearer {jwt}'},
     )
     assert res.status_code == 403
-    assert res.json()['detail'] == "Not authorized to perform this action."
+    assert res.json()['error'] == "Not authorized to perform this action."
 
 
 def test_logout(client, session):
@@ -246,4 +246,4 @@ def test_logout_not_admin(client, session):
         headers={'Authorization': f'Bearer {jwt}'},
     )
     assert res.status_code == 403
-    assert res.json()['detail'] == "Not authorized to perform this action."
+    assert res.json()['error'] == "Not authorized to perform this action."

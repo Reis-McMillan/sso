@@ -1,34 +1,39 @@
 import logging
 from contextlib import asynccontextmanager
-from fastapi import Depends, FastAPI, Request
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+
+from sqlmodel import Session
+from starlette.applications import Starlette
+from starlette.middleware import Middleware
+from starlette.middleware.authentication import AuthenticationMiddleware
+from starlette.middleware.cors import CORSMiddleware
+from starlette.requests import Request
+from starlette.responses import JSONResponse
 
 from verys.config import config
-from verys.middleware.authenticated import authenticate_user
+from verys.database import engine, initialize_db, get_session
+from verys.middleware.authenticated import BearerToken, on_auth_error
 from verys.middleware.logging import RequestLoggingMiddleware
-from verys.database import initialize_db, get_session
 from verys.models import Scope, Role, OAuthClient
+from verys.modules.logging import setup_logging, shutdown_logging
 from verys.routes import (
+    clients,
+    discovery,
+    federation,
     identity,
     jwks,
-    verification,
-    discovery,
     oauth2,
-    userinfo,
-    session,
-    clients,
-    scopes,
     providers,
-    federation,
     registration,
-    roles
+    roles,
+    scopes,
+    session as session_routes,
+    userinfo,
+    verification,
 )
-from verys.modules.logging import setup_logging, shutdown_logging
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(app: Starlette):
     setup_logging()
     initialize_db()
     for db_session in get_session():
@@ -59,39 +64,60 @@ async def lifespan(app: FastAPI):
     shutdown_logging()
 
 
-app = FastAPI(lifespan=lifespan)
+class DBSessionMiddleware:
+    """Open one DB session per HTTP request, exposed as ``request.state.session``."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+        with Session(engine) as db_session:
+            scope.setdefault("state", {})["session"] = db_session
+            await self.app(scope, receive, send)
 
 
-@app.exception_handler(Exception)
-async def unhandled_exception_handler(request: Request, exc: Exception):
+async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
     logging.getLogger("verys").exception(
         "Unhandled exception on %s %s", request.method, request.url.path
     )
-    return JSONResponse(status_code=500, content={"detail": "Internal Server Error"})
+    return JSONResponse(status_code=500, content={"error": "Internal Server Error"})
 
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=config.ALLOWED_ORIGINS,
-    allow_credentials=True,
-    allow_methods=['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allow_headers=['Authorization', 'Content-Type']
+routes = [
+    *discovery.routes,
+    *jwks.routes,
+    *registration.routes,
+    *verification.routes,
+    *oauth2.routes,
+    *userinfo.routes,
+    *session_routes.routes,
+    *federation.routes,
+    *identity.routes,
+    *clients.routes,
+    *scopes.routes,
+    *providers.routes,
+    *roles.routes,
+]
+
+middleware = [
+    Middleware(
+        CORSMiddleware,
+        allow_origins=config.ALLOWED_ORIGINS,
+        allow_credentials=True,
+        allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+        allow_headers=["Authorization", "Content-Type"],
+    ),
+    Middleware(RequestLoggingMiddleware),
+    Middleware(DBSessionMiddleware),
+    Middleware(AuthenticationMiddleware, backend=BearerToken(), on_error=on_auth_error),
+]
+
+app = Starlette(
+    lifespan=lifespan,
+    routes=routes,
+    middleware=middleware,
+    exception_handlers={Exception: unhandled_exception_handler},
 )
-app.add_middleware(RequestLoggingMiddleware)
-
-# Public endpoints
-app.include_router(discovery.router)
-app.include_router(jwks.router)
-app.include_router(registration.router)
-app.include_router(verification.router)
-app.include_router(oauth2.router)
-app.include_router(userinfo.router)
-app.include_router(session.router)
-app.include_router(federation.router)
-
-# Protected endpoints
-app.include_router(identity.router, dependencies=[Depends(authenticate_user)])
-app.include_router(clients.router, dependencies=[Depends(authenticate_user)])
-app.include_router(scopes.router, dependencies=[Depends(authenticate_user)])
-app.include_router(providers.router, dependencies=[Depends(authenticate_user)])
-app.include_router(roles.router, dependencies=[Depends(authenticate_user)])

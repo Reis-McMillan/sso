@@ -1,15 +1,13 @@
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
-from sqlmodel import Session
+from starlette.requests import Request
+from starlette.routing import Route
 
-from verys.database import get_session
 from verys.models.scope import Scope
+from verys.modules.http import json_error, json_message, read_model
 
 logger = logging.getLogger("verys.scopes")
-
-router = APIRouter(prefix="/scopes", tags=["Scopes"])
 
 
 class ScopeCreateRequest(BaseModel):
@@ -23,18 +21,25 @@ class ScopeUpdateRequest(BaseModel):
     provider_id: str | None = None
 
 
-@router.post("/", status_code=201)
-async def create_scope(
-    request: Request,
-    body: ScopeCreateRequest,
-    session: Session = Depends(get_session),
-):
-    if "admin" not in request.state.identity_roles:
-        raise HTTPException(status_code=403, detail="Admin access required")
+def _serialize(scope: Scope) -> dict:
+    return {
+        "name": scope.name,
+        "description": scope.description,
+        "provider_id": scope.provider_id,
+        "created_at": scope.created_at.isoformat() if scope.created_at else None,
+    }
 
-    existing = Scope.get_by_name(session, body.name)
-    if existing:
-        raise HTTPException(status_code=409, detail="Scope already exists")
+
+async def create_scope(request: Request):
+    if not request.user.is_admin:
+        return json_error("Admin access required", status_code=403)
+    body, err = await read_model(request, ScopeCreateRequest)
+    if err:
+        return err
+
+    session = request.state.session
+    if Scope.get_by_name(session, body.name):
+        return json_error("Scope already exists", status_code=409)
 
     scope = Scope(
         name=body.name,
@@ -46,71 +51,42 @@ async def create_scope(
     session.refresh(scope)
 
     logger.info("Scope created: %s", scope.name)
-    return {
-        "name": scope.name,
-        "description": scope.description,
-        "provider_id": scope.provider_id,
-
-        "created_at": scope.created_at.isoformat() if scope.created_at else None,
-    }
+    return json_message("Scope created.", status_code=201, **_serialize(scope))
 
 
-@router.get("/")
-async def list_scopes(
-    request: Request,
-    session: Session = Depends(get_session),
-):
-    if "admin" not in request.state.identity_roles:
-        raise HTTPException(status_code=403, detail="Admin access required")
+async def list_scopes(request: Request):
+    if not request.user.is_admin:
+        return json_error("Admin access required", status_code=403)
 
-    scopes = Scope.all(session)
-    return [
-        {
-            "name": s.name,
-            "description": s.description,
-            "provider_id": s.provider_id,
-
-            "created_at": s.created_at.isoformat() if s.created_at else None,
-        }
-        for s in scopes
-    ]
+    session = request.state.session
+    return json_message(
+        "Scopes retrieved.",
+        scopes=[_serialize(s) for s in Scope.all(session)],
+    )
 
 
-@router.get("/{name}")
-async def get_scope(
-    name: str,
-    request: Request,
-    session: Session = Depends(get_session),
-):
-    if "admin" not in request.state.identity_roles:
-        raise HTTPException(status_code=403, detail="Admin access required")
+async def get_scope(request: Request):
+    if not request.user.is_admin:
+        return json_error("Admin access required", status_code=403)
 
-    scope = Scope.get_by_name(session, name)
+    session = request.state.session
+    scope = Scope.get_by_name(session, request.path_params["name"])
     if not scope:
-        raise HTTPException(status_code=404, detail="Scope not found")
-
-    return {
-        "name": scope.name,
-        "description": scope.description,
-        "provider_id": scope.provider_id,
-
-        "created_at": scope.created_at.isoformat() if scope.created_at else None,
-    }
+        return json_error("Scope not found", status_code=404)
+    return json_message("Scope retrieved.", **_serialize(scope))
 
 
-@router.put("/{name}")
-async def update_scope(
-    name: str,
-    body: ScopeUpdateRequest,
-    request: Request,
-    session: Session = Depends(get_session),
-):
-    if "admin" not in request.state.identity_roles:
-        raise HTTPException(status_code=403, detail="Admin access required")
+async def update_scope(request: Request):
+    if not request.user.is_admin:
+        return json_error("Admin access required", status_code=403)
+    body, err = await read_model(request, ScopeUpdateRequest)
+    if err:
+        return err
 
-    scope = Scope.get_by_name(session, name)
+    session = request.state.session
+    scope = Scope.get_by_name(session, request.path_params["name"])
     if not scope:
-        raise HTTPException(status_code=404, detail="Scope not found")
+        return json_error("Scope not found", status_code=404)
 
     if body.description is not None:
         scope.description = body.description
@@ -122,27 +98,33 @@ async def update_scope(
     session.refresh(scope)
 
     logger.info("Scope updated: %s", scope.name)
-    return {"detail": "Scope updated"}
+    return json_message("Scope updated.")
 
 
-@router.delete("/{name}")
-async def delete_scope(
-    name: str,
-    request: Request,
-    session: Session = Depends(get_session),
-):
-    if "admin" not in request.state.identity_roles:
-        raise HTTPException(status_code=403, detail="Admin access required")
+async def delete_scope(request: Request):
+    if not request.user.is_admin:
+        return json_error("Admin access required", status_code=403)
 
+    name = request.path_params["name"]
     if name in ("openid", "profile", "email"):
-        raise HTTPException(status_code=400, detail="Cannot delete standard OIDC scopes")
+        return json_error("Cannot delete standard OIDC scopes")
 
+    session = request.state.session
     scope = Scope.get_by_name(session, name)
     if not scope:
-        raise HTTPException(status_code=404, detail="Scope not found")
+        return json_error("Scope not found", status_code=404)
 
     session.delete(scope)
     session.commit()
 
     logger.info("Scope deleted: %s", name)
-    return {"detail": "Scope deleted"}
+    return json_message("Scope deleted.")
+
+
+routes = [
+    Route("/scopes/", create_scope, methods=["POST"]),
+    Route("/scopes/", list_scopes, methods=["GET"]),
+    Route("/scopes/{name}", get_scope, methods=["GET"]),
+    Route("/scopes/{name}", update_scope, methods=["PUT"]),
+    Route("/scopes/{name}", delete_scope, methods=["DELETE"]),
+]

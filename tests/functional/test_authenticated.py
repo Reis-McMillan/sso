@@ -21,7 +21,7 @@ def test_jwt_auth_success(session, client, admin_jwt):
 def test_jwt_auth_no_authorization_header(client):
     res = client.get('/identity')
     assert res.status_code == 401
-    assert res.json()['detail'] == 'Not authenticated'
+    assert res.json()['error'] == 'Not authenticated'
 
 
 def test_jwt_auth_bad_format(client):
@@ -30,7 +30,7 @@ def test_jwt_auth_bad_format(client):
         headers={'Authorization': 'BadFormat token123'}
     )
     assert res.status_code == 401
-    assert res.json()['detail'] == 'Not authenticated'
+    assert res.json()['error'] == 'Not authenticated'
 
 
 def test_jwt_auth_missing_sub_claim(client):
@@ -46,7 +46,7 @@ def test_jwt_auth_missing_sub_claim(client):
         headers={'Authorization': f'Bearer {token}'}
     )
     assert res.status_code == 401
-    assert res.json()['detail'] == 'Not authenticated'
+    assert res.json()['error'] == 'Not authenticated'
 
 
 def test_jwt_auth_expired_signature(session, client):
@@ -65,7 +65,7 @@ def test_jwt_auth_expired_signature(session, client):
         headers={'Authorization': f'Bearer {token}'}
     )
     assert res.status_code == 401
-    assert res.json()['detail'] == 'Not authenticated'
+    assert res.json()['error'] == 'Not authenticated'
 
 
 def test_jwt_auth_invalid_token(client):
@@ -74,4 +74,4 @@ def test_jwt_auth_invalid_token(client):
         headers={'Authorization': 'Bearer invalid.jwt.token'}
     )
     assert res.status_code == 401
-    assert res.json()['detail'] == 'Not authenticated'
+    assert res.json()['error'] == 'Not authenticated'

@@ -7,7 +7,7 @@ license = "BSD-3-Clause"
 license-files = ["LICENSE"]
 requires-python = ">=3.12"
 dependencies = [
-    "fastapi>=0.128",
+    "starlette>=0.41",
     "uvicorn>=0.41",
     "sqlmodel>=0.0.32",
     "sqlalchemy>=2.0",

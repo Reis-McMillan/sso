@@ -2,8 +2,8 @@ import base64
 import logging
 
 import bcrypt
-from fastapi import Request
 from sqlmodel import Session
+from starlette.requests import Request
 
 from verys.models.oauth2_client import OAuthClient
 

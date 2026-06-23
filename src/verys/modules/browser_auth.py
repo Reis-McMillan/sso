@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 
-from fastapi import Request
 from sqlmodel import Session
+from starlette.requests import Request
 
 from verys.config import config
 from verys.models.identity import Identity

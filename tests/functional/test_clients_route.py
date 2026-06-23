@@ -60,8 +60,8 @@ def test_list_clients(admin_jwt, client):
     )
     assert res.status_code == 200
     body = res.json()
-    assert isinstance(body, list)
-    assert len(body) >= 2  # created in previous tests
+    assert isinstance(body['clients'], list)
+    assert len(body['clients']) >= 2  # created in previous tests
 
 
 def test_list_clients_no_admin(client, session):

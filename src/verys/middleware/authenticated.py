@@ -1,75 +1,119 @@
 import logging
-from fastapi import Request, HTTPException, Depends
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+
 import jwt
 from sqlmodel import Session
+from starlette.authentication import (
+    AuthCredentials,
+    AuthenticationBackend,
+    AuthenticationError,
+    SimpleUser,
+)
+from starlette.requests import HTTPConnection
+from starlette.responses import JSONResponse
 
-from verys.database import get_session
-from verys.models.identity import Identity
 from verys.config import config
+from verys.database import engine
+from verys.models.identity import Identity
 from verys.modules.jwt import get_public_key_pem
 
 logger = logging.getLogger("verys.auth")
 
-security = HTTPBearer(auto_error=False)
+
+class User(SimpleUser):
+    """Authenticated principal attached to ``request.user``.
+
+    Holds plain values (not the live ORM object) so it stays valid after the
+    DB session used during authentication is closed.
+    """
+
+    def __init__(self, *, id: int, email: str, roles: set[str], token_scopes: list[str]):
+        super().__init__(email)
+        self.id = id
+        self.email = email
+        self.roles = set(roles)
+        self.token_scopes = token_scopes
+
+    @property
+    def is_admin(self) -> bool:
+        return "admin" in self.roles
 
 
-def try_authenticate(
-    request: Request,
-    credentials: HTTPAuthorizationCredentials | None,
-    session: Session,
-) -> Identity | None:
-    """Try to authenticate from Bearer token. Returns None if not authenticated."""
-    if not credentials:
-        return None
+_PUBLIC_FEDERATION_PREFIXES = ("/federation/initiate", "/federation/callback")
 
-    jwt_token = credentials.credentials
-    try:
-        public_key_pem = get_public_key_pem()
-        decoded = jwt.decode(
-            jwt_token,
-            public_key_pem,
-            algorithms=["EdDSA"],
-            audience=config.ISSUER,
-        )
+
+def _requires_auth(method: str, path: str) -> bool:
+    """Whether the Bearer backend must enforce a valid token for this request.
+
+    Routes that manage their own credentials (client auth on /token, browser
+    cookies, self-validated Bearer on /userinfo) or are public return False;
+    their handlers control their own auth responses.
+    """
+    if method == "OPTIONS":
+        return False
+    if path.startswith(("/identity", "/clients", "/scopes", "/roles")):
+        return True
+    if path.startswith("/providers"):
+        # Reads are public; writes require admin (enforced in-handler).
+        return method not in ("GET", "HEAD")
+    if path.startswith("/federation"):
+        if path.startswith(_PUBLIC_FEDERATION_PREFIXES):
+            return False
+        # /federation/tokens, /federation/{id}/tokens, /federation/{token_id}
+        return True
+    return False
+
+
+class BearerToken(AuthenticationBackend):
+    async def authenticate(self, conn: HTTPConnection):
+        if not _requires_auth(conn.scope["method"], conn.url.path):
+            return None
+
+        auth = conn.headers.get("Authorization")
+        if not auth:
+            raise AuthenticationError("Not authenticated")
+
+        parts = auth.split()
+        if len(parts) != 2 or parts[0].lower() != "bearer":
+            raise AuthenticationError("Not authenticated")
+
+        token = parts[1]
+        try:
+            decoded = jwt.decode(
+                token,
+                get_public_key_pem(),
+                algorithms=["EdDSA"],
+                audience=config.ISSUER,
+            )
+        except jwt.InvalidTokenError as e:
+            logger.warning("Auth failed: invalid JWT token - %s", e)
+            raise AuthenticationError("Not authenticated")
 
         sub = decoded.get("sub")
         if not sub:
             logger.warning("Auth failed: JWT missing 'sub' claim")
-            return None
+            raise AuthenticationError("Not authenticated")
 
         try:
             identity_id = int(sub)
         except (TypeError, ValueError):
             logger.warning("Auth failed: 'sub' claim is not a valid identity id: %s", sub)
-            return None
+            raise AuthenticationError("Not authenticated")
 
-        identity = Identity.get_by_id(session, identity_id)
-        if not identity:
-            logger.warning("Auth failed: no identity for id %s", identity_id)
-            return None
-        
-        request.state.identity = identity
-        request.state.identity_roles = {r.name for r in identity.roles}
-        request.state.token_scopes = decoded.get("scopes", [])
-        logger.info("Authenticated %s via JWT", identity.email)
-        return identity
+        with Session(engine) as session:
+            identity = Identity.get_by_id(session, identity_id)
+            if not identity:
+                logger.warning("Auth failed: no identity for id %s", identity_id)
+                raise AuthenticationError("Not authenticated")
+            user = User(
+                id=identity.id,
+                email=identity.email,
+                roles={r.name for r in identity.roles},
+                token_scopes=decoded.get("scopes", []),
+            )
 
-    except jwt.ExpiredSignatureError:
-        logger.warning("Auth failed: JWT token expired")
-        return None
-    except jwt.InvalidTokenError as e:
-        logger.warning("Auth failed: invalid JWT token - %s", e)
-        return None
+        logger.info("Authenticated %s via JWT", user.email)
+        return AuthCredentials(["authenticated"]), user
 
 
-async def authenticate_user(
-    request: Request,
-    credentials: HTTPAuthorizationCredentials | None = Depends(security),
-    session: Session = Depends(get_session),
-) -> Identity:
-    """FastAPI dependency that requires a valid Bearer token."""
-    identity = try_authenticate(request, credentials, session)
-    if not identity:
-        raise HTTPException(status_code=401, detail="Not authenticated")
-    return identity
+def on_auth_error(conn: HTTPConnection, exc: AuthenticationError) -> JSONResponse:
+    return JSONResponse(status_code=401, content={"error": str(exc)})

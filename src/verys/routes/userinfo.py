@@ -1,78 +1,61 @@
 import logging
 
 import jwt as pyjwt
-from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import JSONResponse
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from sqlmodel import Session
+from starlette.requests import Request
+from starlette.responses import JSONResponse
+from starlette.routing import Route
 
-from verys.database import get_session
 from verys.models.identity import Identity
+from verys.modules.http import json_error
 from verys.modules.jwt import get_public_key_pem
 from verys.config import config
 
 logger = logging.getLogger("verys.userinfo")
 
-router = APIRouter(tags=["UserInfo"])
 
-security = HTTPBearer(auto_error=False)
+async def userinfo(request: Request):
+    session = request.state.session
 
-
-@router.get("/userinfo")
-@router.post("/userinfo")
-async def userinfo(
-    request: Request,
-    credentials: HTTPAuthorizationCredentials | None = Depends(security),
-    session: Session = Depends(get_session),
-):
     # Accept token from Authorization header or POST body (access_token field)
     token = None
-    if credentials:
-        token = credentials.credentials
+    auth_header = request.headers.get("Authorization", "")
+    if auth_header.lower().startswith("bearer "):
+        token = auth_header.split(None, 1)[1]
     elif request.method == "POST":
         form = await request.form()
         token = form.get("access_token")
 
     if not token:
-        raise HTTPException(status_code=401, detail="Missing access token")
+        return json_error("Missing access token", status_code=401)
 
     try:
-        public_key_pem = get_public_key_pem()
         decoded = pyjwt.decode(
             token,
-            public_key_pem,
+            get_public_key_pem(),
             algorithms=["EdDSA"],
             audience=config.ISSUER,
         )
     except pyjwt.ExpiredSignatureError as e:
         logger.warning("Expired token getting user info: %s", e)
-        raise HTTPException(status_code=401, detail="Token expired")
+        return json_error("Token expired", status_code=401)
     except pyjwt.InvalidTokenError as e:
-        logger.warning(
-            "Invalid token getting user info: %s",
-            e,
-            exc_info=True
-        )
-        raise HTTPException(status_code=401, detail="Invalid token")
+        logger.warning("Invalid token getting user info: %s", e, exc_info=True)
+        return json_error("Invalid token", status_code=401)
 
     sub = decoded.get("sub")
     if not sub:
-        logger.warning(
-            "Subject missing while getting user info",
-            exc_info=True
-        )
-        raise HTTPException(status_code=401, detail="Invalid token: missing subject")
+        logger.warning("Subject missing while getting user info", exc_info=True)
+        return json_error("Invalid token: missing subject", status_code=401)
 
     try:
         identity_id = int(sub)
     except (TypeError, ValueError) as e:
-        logger.warning(
-            "Invalid subject data type while getting user info: %s", e)
-        raise HTTPException(status_code=401, detail="Invalid token: bad subject")
+        logger.warning("Invalid subject data type while getting user info: %s", e)
+        return json_error("Invalid token: bad subject", status_code=401)
 
     identity = Identity.get_by_id(session, identity_id)
     if not identity:
-        raise HTTPException(status_code=401, detail="Identity not found")
+        return json_error("Identity not found", status_code=401)
 
     token_scopes = set(decoded.get("scopes") or [])
 
@@ -93,3 +76,8 @@ async def userinfo(
         claims["roles"] = roles
 
     return JSONResponse(claims)
+
+
+routes = [
+    Route("/userinfo", userinfo, methods=["GET", "POST"]),
+]

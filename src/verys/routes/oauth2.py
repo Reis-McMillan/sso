@@ -4,14 +4,14 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import urlencode
 
-from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
-from fastapi.templating import Jinja2Templates
-from sqlmodel import Session
 import jwt
+from sqlmodel import Session
+from starlette.requests import Request
+from starlette.responses import JSONResponse, RedirectResponse
+from starlette.routing import Route
+from starlette.templating import Jinja2Templates
 
 from verys.config import config
-from verys.database import get_session
 from verys.models.authorization_code import AuthorizationCode
 from verys.models.consent import Consent
 from verys.models.external_token import ExternalToken
@@ -22,20 +22,17 @@ from verys.models.refresh_token import RefreshToken
 from verys.models.scope import Scope
 from verys.modules.browser_auth import get_browser_identity
 from verys.modules.client_auth import authenticate_client
+from verys.modules.http import json_error, require_query
 from verys.modules.jwt import create_id_token, create_signed_jwt, get_public_key_pem
 from verys.modules.pkce import verify_code_challenge
 
 logger = logging.getLogger("verys.oauth2")
 
-router = APIRouter(tags=["OAuth2"])
-
 TEMPLATE_DIR = Path(__file__).resolve().parent.parent / "templates"
 templates = Jinja2Templates(directory=str(TEMPLATE_DIR))
 
 
-def _get_authenticated_identity(
-    request: Request, session: Session
-) -> Identity | None:
+def _get_authenticated_identity(request: Request, session: Session) -> Identity | None:
     """Try to authenticate user from cookies (browser flow)."""
     return get_browser_identity(request, session)
 
@@ -44,20 +41,13 @@ def _build_error_redirect(redirect_uri: str, error: str, description: str, state
     params = {"error": error, "error_description": description}
     if state:
         params["state"] = state
-    return RedirectResponse(
-        url=f"{redirect_uri}?{urlencode(params)}", status_code=302
-    )
+    return RedirectResponse(url=f"{redirect_uri}?{urlencode(params)}", status_code=302)
 
 
 def _find_missing_federation_provider(
-    session: "Session", identity_id: int, federation_scopes: dict[str, list[str]]
+    session: Session, identity_id: int, federation_scopes: dict[str, list[str]]
 ) -> str | None:
-    """Check if user has valid external tokens for all federation providers.
-
-    Returns the first provider_id that is missing a token, or None if all are present.
-    A provider is considered missing if there is no token record or no refresh token
-    (the access token can be refreshed later via /federation/tokens).
-    """
+    """Return the first federation provider missing a usable token, else None."""
     for provider_id, scope_names in federation_scopes.items():
         tokens = ExternalToken.get_all_for_user_by_provider(session, identity_id, provider_id)
         if not tokens or not any(t.refresh_token_encrypted for t in tokens):
@@ -66,7 +56,7 @@ def _find_missing_federation_provider(
 
 
 def _redirect_to_federation(
-    session: "Session",
+    session: Session,
     provider_id: str,
     scope_names: list[str],
     client_id: str,
@@ -98,37 +88,42 @@ def _redirect_to_federation(
         "scope_names": " ".join(scope_names),
         "oauth2_session_id": oauth2_session.session_id,
     }
-    return RedirectResponse(
-        url=f"/federation/initiate?{urlencode(params)}", status_code=302
-    )
+    return RedirectResponse(url=f"/federation/initiate?{urlencode(params)}", status_code=302)
 
 
-@router.get("/authorize")
-@router.post("/authorize")
-async def authorize(
-    request: Request,
-    response_type: str = Query(...),
-    client_id: str = Query(...),
-    redirect_uri: str = Query(...),
-    scope: str = Query(...),
-    state: str | None = Query(None),
-    nonce: str | None = Query(None),
-    code_challenge: str | None = Query(None),
-    code_challenge_method: str | None = Query(None),
-    prompt: str | None = Query(None),
-    max_age: int | None = Query(None),
-    request_obj: str | None = Query(None, alias="request"),
-    request_uri: str | None = Query(None),
-    session: Session = Depends(get_session),
-):
+async def authorize(request: Request):
+    if err := require_query(request, "response_type", "client_id", "redirect_uri", "scope"):
+        return err
+
+    q = request.query_params
+    response_type = q.get("response_type")
+    client_id = q.get("client_id")
+    redirect_uri = q.get("redirect_uri")
+    scope = q.get("scope")
+    state = q.get("state")
+    nonce = q.get("nonce")
+    code_challenge = q.get("code_challenge")
+    code_challenge_method = q.get("code_challenge_method")
+    prompt = q.get("prompt")
+    request_obj = q.get("request")
+    request_uri = q.get("request_uri")
+    max_age = None
+    if q.get("max_age") is not None:
+        try:
+            max_age = int(q.get("max_age"))
+        except ValueError:
+            return json_error("Invalid max_age")
+
+    session = request.state.session
+
     # Validate client
     client = OAuthClient.get_by_client_id(session, client_id)
     if not client:
-        raise HTTPException(status_code=400, detail="Invalid client_id")
+        return json_error("Invalid client_id", status_code=400)
 
     # Validate redirect_uri (exact match required)
     if redirect_uri not in client.redirect_uris:
-        raise HTTPException(status_code=400, detail="Invalid redirect_uri")
+        return json_error("Invalid redirect_uri", status_code=400)
 
     # Reject request objects — not supported (OIDCC-3.1.2.6)
     if request_obj is not None:
@@ -318,35 +313,33 @@ async def authorize(
     })
 
 
-@router.post("/authorize/consent")
-async def authorize_consent(
-    request: Request,
-    oauth2_session_id: str = Form(...),
-    consent_action: str = Form(...),
-    csrf_token: str = Form(...),
-    session: Session = Depends(get_session),
-):
+async def authorize_consent(request: Request):
+    session = request.state.session
+    form = await request.form()
+    oauth2_session_id = form.get("oauth2_session_id")
+    consent_action = form.get("consent_action")
+    csrf_token = form.get("csrf_token")
+
     # Look up session
     oauth2_session = OAuth2Session.get_by_session_id(session, oauth2_session_id)
     if not oauth2_session or oauth2_session.is_expired():
-        raise HTTPException(status_code=400, detail="Invalid or expired session")
+        return json_error("Invalid or expired session", status_code=400)
 
     # Verify CSRF token
     if not oauth2_session.csrf_token or not secrets.compare_digest(
-        csrf_token, oauth2_session.csrf_token
+        csrf_token or "", oauth2_session.csrf_token
     ):
-        raise HTTPException(status_code=403, detail="Invalid CSRF token")
+        return json_error("Invalid CSRF token", status_code=403)
 
     # Verify user is authenticated
     identity = _get_authenticated_identity(request, session)
     if not identity:
-        raise HTTPException(status_code=401, detail="Not authenticated")
+        return json_error("Not authenticated", status_code=401)
 
     redirect_uri = oauth2_session.redirect_uri
     state = oauth2_session.state
 
     if consent_action != "approve":
-        # Clean up session
         session.delete(oauth2_session)
         session.commit()
         return _build_error_redirect(
@@ -357,7 +350,7 @@ async def authorize_consent(
     # Look up client
     client = OAuthClient.get_by_client_id(session, oauth2_session.client_id)
     if not client:
-        raise HTTPException(status_code=400, detail="Client not found")
+        return json_error("Client not found", status_code=400)
 
     requested_scopes = oauth2_session.scope.split()
 
@@ -436,26 +429,23 @@ def _issue_authorization_code(
         identity.email,
         client.client_id,
     )
-    return RedirectResponse(
-        url=f"{redirect_uri}?{urlencode(params)}", status_code=302
-    )
+    return RedirectResponse(url=f"{redirect_uri}?{urlencode(params)}", status_code=302)
 
 
-@router.post("/token")
-async def token_endpoint(
-    request: Request,
-    grant_type: str = Form(...),
-    code: str | None = Form(None),
-    redirect_uri: str | None = Form(None),
-    client_id: str | None = Form(None),
-    client_secret: str | None = Form(None),
-    code_verifier: str | None = Form(None),
-    refresh_token: str | None = Form(None),
-    subject_token: str | None = Form(None),
-    subject_token_type: str | None = Form(None),
-    audience: str | None = Form(None),
-    session: Session = Depends(get_session),
-):
+async def token_endpoint(request: Request):
+    session = request.state.session
+    form = await request.form()
+    grant_type = form.get("grant_type")
+    code = form.get("code")
+    redirect_uri = form.get("redirect_uri")
+    client_id = form.get("client_id")
+    client_secret = form.get("client_secret")
+    code_verifier = form.get("code_verifier")
+    refresh_token = form.get("refresh_token")
+    subject_token = form.get("subject_token")
+    subject_token_type = form.get("subject_token_type")
+    audience = form.get("audience")
+
     # Authenticate client
     client = authenticate_client(request, session, client_id, client_secret)
     if not client:
@@ -502,7 +492,6 @@ async def _handle_authorization_code_grant(
             content={"error": "invalid_grant", "error_description": "Authorization code not found"},
         )
 
-    # Validate
     # Look up identity early (needed for replay handling and token issuance)
     identity = Identity.get(session, auth_code.identity_email)
     if not identity:
@@ -582,11 +571,7 @@ async def _handle_authorization_code_grant(
     session.commit()
     session.refresh(rt)
 
-    logger.info(
-        "Tokens issued for %s (client: %s)",
-        identity.email,
-        client.client_id,
-    )
+    logger.info("Tokens issued for %s (client: %s)", identity.email, client.client_id)
 
     return JSONResponse(
         content={
@@ -658,18 +643,14 @@ async def _handle_refresh_token_grant(
         client_id=client.client_id,
         identity_id=identity.id,
         scopes=rt.scopes,
-        expires_at=identity.expires
+        expires_at=identity.expires,
     )
     session.add(new_rt)
     session.flush()
 
     rt.revoke(session, replaced_by=new_rt.token)
 
-    logger.info(
-        "Tokens refreshed for %s (client: %s)",
-        identity.email,
-        client.client_id,
-    )
+    logger.info("Tokens refreshed for %s (client: %s)", identity.email, client.client_id)
 
     return JSONResponse(
         content={
@@ -718,11 +699,7 @@ async def _handle_token_exchange_grant(
             audience=config.ISSUER,
         )
     except jwt.InvalidTokenError as e:
-        logger.warning(
-            "Invalid subject token during token exchange: %s",
-            e,
-            exc_info=True
-        )
+        logger.warning("Invalid subject token during token exchange: %s", e, exc_info=True)
         return JSONResponse(
             status_code=400,
             content={"error": "invalid_grant", "error_description": "Invalid or expired subject token"},
@@ -756,7 +733,7 @@ async def _handle_token_exchange_grant(
     try:
         identity_id = int(decoded.get("sub", ""))
     except (TypeError, ValueError) as e:
-        logger.warning("Invalid subject during token excahnge: %s", e)
+        logger.warning("Invalid subject during token exchange: %s", e)
         return JSONResponse(
             status_code=400,
             content={"error": "invalid_grant", "error_description": "Invalid subject in token"},
@@ -775,16 +752,12 @@ async def _handle_token_exchange_grant(
             content={
                 "error": "access_denied",
                 "error_description": "User has not consented to target client.",
-            }
+            },
         )
 
     # Issue new access token scoped to the target audience with the target's
     # required scopes.
-    access_token = create_signed_jwt(
-        identity,
-        required_scopes,
-        audience=audience,
-    )
+    access_token = create_signed_jwt(identity, required_scopes, audience=audience)
 
     logger.info(
         "Token exchange: %s exchanged token for audience %s (via client: %s)",
@@ -800,3 +773,10 @@ async def _handle_token_exchange_grant(
         },
         headers={"Cache-Control": "no-store"},
     )
+
+
+routes = [
+    Route("/authorize", authorize, methods=["GET", "POST"]),
+    Route("/authorize/consent", authorize_consent, methods=["POST"]),
+    Route("/token", token_endpoint, methods=["POST"]),
+]

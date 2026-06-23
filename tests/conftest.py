@@ -1,5 +1,5 @@
 from datetime import datetime, timedelta, timezone
-from fastapi.testclient import TestClient
+from starlette.testclient import TestClient
 import pytest
 from sqlmodel import SQLModel
 

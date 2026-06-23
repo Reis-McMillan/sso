@@ -1,16 +1,13 @@
-from fastapi import APIRouter, Depends
-from fastapi.responses import JSONResponse
-from sqlmodel import Session
+from starlette.requests import Request
+from starlette.responses import JSONResponse
+from starlette.routing import Route
 
 from verys.config import config
-from verys.database import get_session
 from verys.models.scope import Scope
 
-router = APIRouter(tags=["Discovery"])
 
-
-@router.get("/.well-known/openid-configuration")
-async def openid_configuration(session: Session = Depends(get_session)):
+async def openid_configuration(request: Request):
+    session = request.state.session
     scopes_supported = Scope.get_names(session)
     return JSONResponse({
         "issuer": config.ISSUER,
@@ -52,3 +49,8 @@ async def openid_configuration(session: Session = Depends(get_session)):
         "request_parameter_supported": False,
         "request_uri_parameter_supported": False,
     })
+
+
+routes = [
+    Route("/.well-known/openid-configuration", openid_configuration, methods=["GET"]),
+]

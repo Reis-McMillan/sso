@@ -101,7 +101,7 @@ def test_verify_invalid_code(client, session):
         params={'email': 'invalidcode@example.com', 'code': '000000'}
     )
     assert res.status_code == 404
-    assert res.json()['detail'] == 'Invalid or expired code'
+    assert res.json()['error'] == 'Invalid or expired code'
 
 
 def test_verify_expired_code(client, session):
@@ -117,7 +117,7 @@ def test_verify_expired_code(client, session):
         params={'email': 'expiredcode@example.com', 'code': str(code)}
     )
     assert res.status_code == 404
-    assert res.json()['detail'] == 'Invalid or expired code'
+    assert res.json()['error'] == 'Invalid or expired code'
 
 
 def test_verify_nonexistent_email(client):
@@ -144,7 +144,7 @@ def test_email_send_failure(client, session):
             params={'email': 'fail@example.com'}
         )
     assert res.status_code == 500
-    assert res.json()['detail'] == 'Email service failed.'
+    assert res.json()['error'] == 'Email service failed.'
 
 
 def test_missing_email_post(client):

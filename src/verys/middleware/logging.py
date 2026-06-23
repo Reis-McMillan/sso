@@ -1,7 +1,7 @@
 import logging
 import time
-from fastapi import Request
 from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request
 
 logger = logging.getLogger("verys.http")
 

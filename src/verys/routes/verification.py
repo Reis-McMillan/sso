@@ -2,51 +2,67 @@
 import logging
 from pathlib import Path
 from urllib.parse import urlencode
-from fastapi import APIRouter, Depends, HTTPException, Query, Response
-from fastapi.responses import RedirectResponse
-from sqlmodel import Session
-from datetime import datetime, timedelta, timezone
+
 import aiosmtplib
+from datetime import datetime, timedelta, timezone
 from email.message import EmailMessage
+
 import humanize
 from pydantic import ValidationError
+from sqlmodel import Session
+from starlette.requests import Request
+from starlette.responses import RedirectResponse
+from starlette.routing import Route
 
-from verys.database import get_session
+from verys.config import config
 from verys.models.verification import Verification
 from verys.models.identity import Identity
 from verys.models.oauth2_session import OAuth2Session
-from verys.config import config
 from verys.modules.cookie import encrypt_cookie
+from verys.modules.http import json_error, json_message, require_query
 
 logger = logging.getLogger("verys.verification")
 
 TEMPLATE_DIR = Path(__file__).resolve().parent.parent / "templates"
 
-router = APIRouter(prefix="/verification", tags=["Verification"])
 
-@router.get("", status_code=200)
-async def verify_code(
-    email: str = Query(...),
-    code: str = Query(...),
-    oauth2_session: str | None = Query(None),
-    session: Session = Depends(get_session)
-):
+def _cookie_opts() -> dict:
+    opts = {
+        "httponly": True,
+        "secure": True,
+        "samesite": "lax",
+        "max_age": int(config.AUTHENTICATION_TTL),
+        "path": "/",
+    }
+    if config.COOKIE_DOMAIN:
+        opts["domain"] = config.COOKIE_DOMAIN
+    return opts
+
+
+async def verify_code(request: Request):
+    if err := require_query(request, "email", "code"):
+        return err
+    session = request.state.session
+    email = request.query_params.get("email")
+    code = request.query_params.get("code")
+    oauth2_session = request.query_params.get("oauth2_session")
+
     try:
         v_entry = Verification.verify(session, email, int(code), config.VERIFY_TTL)
         if not v_entry:
             logger.warning("Verification failed: invalid or expired code for %s", email)
-            raise HTTPException(status_code=404, detail="Invalid or expired code")
+            return json_error("Invalid or expired code", status_code=404)
     except ValidationError as e:
         logger.warning("Verification failed: validation error for %s - %s", email, e)
-        raise HTTPException(status_code=404, detail=str(e))
+        return json_error(str(e), status_code=404)
     except ValueError as e:
         logger.warning("Verification failed: value error for %s - %s", email, e)
-        raise HTTPException(status_code=404, detail=str(e))
+        return json_error(str(e), status_code=404)
 
     r = Identity.get(session, email)
     if not r:
         logger.warning("Verification failed: no identity for %s", email)
-        raise HTTPException(status_code=404, detail="No account exists for this email")
+        return json_error("No account exists for this email", status_code=404)
 
     # If the identity has expired, refresh the session key & expiry. Verification
     # renews browser sessions; email_verified, once set, stays set.
@@ -63,16 +79,7 @@ async def verify_code(
 
     logger.info("Verification successful: %s", email)
     value, iv = encrypt_cookie(r.email, r.auth_key)
-    max_age = int(config.AUTHENTICATION_TTL)
-    cookie_opts = {
-        "httponly": True,
-        "secure": True,
-        "samesite": "lax",
-        "max_age": max_age,
-        "path": "/",
-    }
-    if config.COOKIE_DOMAIN:
-        cookie_opts["domain"] = config.COOKIE_DOMAIN
+    cookie_opts = _cookie_opts()
 
     # If this verification was part of an OAuth2 flow, redirect back to /authorize
     if oauth2_session:
@@ -93,29 +100,26 @@ async def verify_code(
             if oauth2_sess.code_challenge_method:
                 params["code_challenge_method"] = oauth2_sess.code_challenge_method
 
-            # Clean up the session
             session.delete(oauth2_sess)
             session.commit()
 
-            response = RedirectResponse(
-                url=f"/authorize?{urlencode(params)}", status_code=302
-            )
+            response = RedirectResponse(url=f"/authorize?{urlencode(params)}", status_code=302)
             response.set_cookie(key=config.ENCRYPT_COOKIE_NAME, value=value, **cookie_opts)
             response.set_cookie(key=f"{config.ENCRYPT_COOKIE_NAME}_iv", value=iv, **cookie_opts)
             logger.info("OAuth2 flow: redirecting %s back to /authorize", r.email)
             return response
 
-    response = Response(status_code=200)
+    response = json_message("Email verified.")
     response.set_cookie(key=config.ENCRYPT_COOKIE_NAME, value=value, **cookie_opts)
     response.set_cookie(key=f"{config.ENCRYPT_COOKIE_NAME}_iv", value=iv, **cookie_opts)
     logger.info("Cookie issued for %s", r.email)
     return response
 
 
-async def send_verification_email(session: Session, email: str) -> None:
+async def send_verification_email(session: Session, email: str):
     """Generate a verification code for the given email and send it.
 
-    Raises HTTPException(500) if the email send fails.
+    Returns a ``JSONResponse`` (500) if the email send fails, otherwise ``None``.
     """
     vcode = Verification.make_code()
     Verification.make_entry(session, email, vcode)
@@ -138,15 +142,15 @@ async def send_verification_email(session: Session, email: str) -> None:
         final_html = final_html.replace(placeholder, value)
 
     message = EmailMessage()
-    message['Subject'] = "Verify your email address"
-    message['From'] = config.VERIFY_FROM_ADDR
-    message['To'] = email
-    message.add_alternative(final_text, subtype='text')
-    message.add_alternative(final_html, subtype='html')
+    message["Subject"] = "Verify your email address"
+    message["From"] = config.VERIFY_FROM_ADDR
+    message["To"] = email
+    message.add_alternative(final_text, subtype="text")
+    message.add_alternative(final_html, subtype="html")
 
-    debug_addr = getattr(config, 'VERIFY_DEBUG_ADDR', None)
+    debug_addr = getattr(config, "VERIFY_DEBUG_ADDR", None)
     if debug_addr:
-        message['Bcc'] = debug_addr
+        message["Bcc"] = debug_addr
         recipients = [email, debug_addr]
     else:
         recipients = email
@@ -165,27 +169,31 @@ async def send_verification_email(session: Session, email: str) -> None:
         logger.info("Verification email sent to %s", email)
     except Exception as e:
         logger.error("Email send failed for %s: %s", email, e, exc_info=True)
-        raise HTTPException(status_code=500, detail="Email service failed.")
+        return json_error("Email service failed.", status_code=500)
+    return None
 
 
-@router.post("", status_code=201)
-async def handle_verification(
-    email: str = Query(...),
-    oauth2_session: str | None = Query(None),
-    session: Session = Depends(get_session)
-):
+async def handle_verification(request: Request):
+    if err := require_query(request, "email"):
+        return err
+    session = request.state.session
+    email = request.query_params.get("email")
+    oauth2_session = request.query_params.get("oauth2_session")
+
     identity = Identity.get(session, email)
     if not identity:
         params = {"email": email}
         if oauth2_session:
             params["oauth2_session"] = oauth2_session
-        logger.info(
-            "POST /verification: no identity for %s — redirecting to /register/",
-            email,
-        )
-        return RedirectResponse(
-            url=f"/register/?{urlencode(params)}", status_code=302
-        )
+        logger.info("POST /verification: no identity for %s — redirecting to /register/", email)
+        return RedirectResponse(url=f"/register/?{urlencode(params)}", status_code=302)
 
-    await send_verification_email(session, email)
-    return Response(status_code=201)
+    if err := await send_verification_email(session, identity.email):
+        return err
+    return json_message("Verification code sent.", status_code=201)
+
+
+routes = [
+    Route("/verification", verify_code, methods=["GET"]),
+    Route("/verification", handle_verification, methods=["POST"]),
+]

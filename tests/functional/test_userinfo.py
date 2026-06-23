@@ -72,7 +72,7 @@ def test_userinfo_expired_token(session, client):
         headers={'Authorization': f'Bearer {token}'},
     )
     assert res.status_code == 401
-    assert res.json()['detail'] == 'Token expired'
+    assert res.json()['error'] == 'Token expired'
 
 
 def test_userinfo_missing_sub(client):
@@ -89,4 +89,4 @@ def test_userinfo_missing_sub(client):
         headers={'Authorization': f'Bearer {token}'},
     )
     assert res.status_code == 401
-    assert res.json()['detail'] == 'Invalid token: missing subject'
+    assert res.json()['error'] == 'Invalid token: missing subject'

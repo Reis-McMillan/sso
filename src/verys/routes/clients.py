@@ -1,19 +1,19 @@
 import logging
 import secrets
+
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlmodel import Session
+from starlette.requests import Request
+from starlette.routing import Route
 
 from verys.config import config
-from verys.database import get_session
 from verys.models.oauth2_client import OAuthClient
 from verys.models.scope import Scope
 from verys.modules.client_auth import hash_client_secret
+from verys.modules.http import json_error, json_message, read_model
 
 logger = logging.getLogger("verys.clients")
-
-router = APIRouter(prefix="/clients", tags=["Clients"])
 
 
 class ClientCreateRequest(BaseModel):
@@ -37,53 +37,46 @@ class ClientUpdateRequest(BaseModel):
 
 
 async def _get_prm_uri(prm_uri: str, client_name: str, session: Session):
+    """Returns ``(required_scopes, None)`` or ``(None, JSONResponse error)``."""
     async with httpx.AsyncClient() as client:
         response = await client.get(prm_uri)
         if response.status_code != 200:
-            raise HTTPException(
-                status_code=400,
-                detail="Failed to retrieve OAuth metadata for client."
-            )
-        
+            return None, json_error("Failed to retrieve OAuth metadata for client.")
+
         result: dict = response.json()
-        if not config.ISSUER in result.get('authorization_servers', []):
-            raise HTTPException(
-                status_code=400,
-                detail=f"Client must list {config.ISSUER} as authorization server."
+        if config.ISSUER not in result.get("authorization_servers", []):
+            return None, json_error(
+                f"Client must list {config.ISSUER} as authorization server."
             )
-        
-        if result.get('resource_name') != client_name:
-            raise HTTPException(
-                status_code=400,
-                detail="Client name must match OAuth resource name."
-            )
-        
-        required_scopes = result.get('scopes_supported', [])
+
+        if result.get("resource_name") != client_name:
+            return None, json_error("Client name must match OAuth resource name.")
+
+        required_scopes = result.get("scopes_supported", [])
         for s in required_scopes:
             if not Scope.get_by_name(session, s):
-                raise HTTPException(status_code=400, detail=f"Unknown scope '{s}'")
-        return required_scopes
+                return None, json_error(f"Unknown scope '{s}'")
+        return required_scopes, None
 
 
-@router.post("/", status_code=201)
-async def create_client(
-    request: Request,
-    body: ClientCreateRequest,
-    session: Session = Depends(get_session),
-):
-    if "admin" not in request.state.identity_roles:
-        raise HTTPException(status_code=403, detail="Admin access required")
+async def create_client(request: Request):
+    if not request.user.is_admin:
+        return json_error("Admin access required", status_code=403)
+    body, err = await read_model(request, ClientCreateRequest)
+    if err:
+        return err
 
-    # Validate scopes exist in the database
+    session = request.state.session
     for s in body.allowed_scopes:
         if not Scope.get_by_name(session, s):
-            raise HTTPException(status_code=400, detail=f"Unknown scope '{s}'")
+            return json_error(f"Unknown scope '{s}'")
 
     required_scopes = []
     if body.prm_uri:
-        required_scopes = await _get_prm_uri(body.prm_uri, body.client_name, session)
+        required_scopes, prm_err = await _get_prm_uri(body.prm_uri, body.client_name, session)
+        if prm_err:
+            return prm_err
 
-    # Generate client credentials
     plain_secret = secrets.token_urlsafe(48) if not body.is_public else None
 
     client = OAuthClient(
@@ -96,7 +89,7 @@ async def create_client(
         token_endpoint_auth_method=body.token_endpoint_auth_method,
         is_public=body.is_public,
         client_secret_hash=hash_client_secret(plain_secret) if plain_secret else None,
-        owner_email=request.state.identity.email,
+        owner_email=request.user.email,
     )
     session.add(client)
     session.commit()
@@ -104,7 +97,7 @@ async def create_client(
 
     logger.info("Client created: %s (%s)", client.client_id, client.client_name)
 
-    response = {
+    payload = {
         "client_id": client.client_id,
         "client_name": client.client_name,
         "redirect_uris": client.redirect_uris,
@@ -114,73 +107,70 @@ async def create_client(
         "is_public": client.is_public,
     }
     if plain_secret:
-        response["client_secret"] = plain_secret
-    return response
+        payload["client_secret"] = plain_secret
+    return json_message("Client created.", status_code=201, **payload)
 
 
-@router.get("/")
-async def list_clients(
-    request: Request,
-    session: Session = Depends(get_session),
-):
-    if "admin" not in request.state.identity_roles:
-        raise HTTPException(status_code=403, detail="Admin access required")
+async def list_clients(request: Request):
+    if not request.user.is_admin:
+        return json_error("Admin access required", status_code=403)
 
+    session = request.state.session
     clients = OAuthClient.all(session)
-    return [
-        {
-            "client_id": c.client_id,
-            "client_name": c.client_name,
-            "redirect_uris": c.redirect_uris,
-            "allowed_scopes": c.allowed_scopes,
-            "required_scopes": c.required_scopes,
-            "is_public": c.is_public,
-            "created_at": c.created_at.isoformat() if c.created_at else None,
-        }
-        for c in clients
-    ]
+    return json_message(
+        "Clients retrieved.",
+        clients=[
+            {
+                "client_id": c.client_id,
+                "client_name": c.client_name,
+                "redirect_uris": c.redirect_uris,
+                "allowed_scopes": c.allowed_scopes,
+                "required_scopes": c.required_scopes,
+                "is_public": c.is_public,
+                "created_at": c.created_at.isoformat() if c.created_at else None,
+            }
+            for c in clients
+        ],
+    )
 
 
-@router.get("/{client_id}")
-async def get_client(
-    client_id: str,
-    request: Request,
-    session: Session = Depends(get_session),
-):
-    if "admin" not in request.state.identity_roles:
-        raise HTTPException(status_code=403, detail="Admin access required")
+async def get_client(request: Request):
+    if not request.user.is_admin:
+        return json_error("Admin access required", status_code=403)
 
+    session = request.state.session
+    client_id = request.path_params["client_id"]
     client = OAuthClient.get_by_client_id(session, client_id)
     if not client:
-        raise HTTPException(status_code=404, detail="Client not found")
+        return json_error("Client not found", status_code=404)
 
-    return {
-        "client_id": client.client_id,
-        "client_name": client.client_name,
-        "redirect_uris": client.redirect_uris,
-        "allowed_scopes": client.allowed_scopes,
-        "required_scopes": client.required_scopes,
-        "grant_types": client.grant_types,
-        "token_endpoint_auth_method": client.token_endpoint_auth_method,
-        "is_public": client.is_public,
-        "created_at": client.created_at.isoformat() if client.created_at else None,
-        "owner_email": client.owner_email,
-    }
+    return json_message(
+        "Client retrieved.",
+        client_id=client.client_id,
+        client_name=client.client_name,
+        redirect_uris=client.redirect_uris,
+        allowed_scopes=client.allowed_scopes,
+        required_scopes=client.required_scopes,
+        grant_types=client.grant_types,
+        token_endpoint_auth_method=client.token_endpoint_auth_method,
+        is_public=client.is_public,
+        created_at=client.created_at.isoformat() if client.created_at else None,
+        owner_email=client.owner_email,
+    )
 
 
-@router.put("/{client_id}")
-async def update_client(
-    client_id: str,
-    body: ClientUpdateRequest,
-    request: Request,
-    session: Session = Depends(get_session),
-):
-    if "admin" not in request.state.identity_roles:
-        raise HTTPException(status_code=403, detail="Admin access required")
+async def update_client(request: Request):
+    if not request.user.is_admin:
+        return json_error("Admin access required", status_code=403)
+    body, err = await read_model(request, ClientUpdateRequest)
+    if err:
+        return err
 
+    session = request.state.session
+    client_id = request.path_params["client_id"]
     client = OAuthClient.get_by_client_id(session, client_id)
     if not client:
-        raise HTTPException(status_code=404, detail="Client not found")
+        return json_error("Client not found", status_code=404)
 
     if body.client_name is not None:
         client.client_name = body.client_name
@@ -189,14 +179,13 @@ async def update_client(
     if body.allowed_scopes is not None:
         for s in body.allowed_scopes:
             if not Scope.get_by_name(session, s):
-                raise HTTPException(status_code=400, detail=f"Unknown scope '{s}'")
+                return json_error(f"Unknown scope '{s}'")
         client.allowed_scopes = body.allowed_scopes
     if body.prm_uri is not None:
-        if body.client_name:
-            client_name = body.client_name
-        else:
-            client_name = client.client_name
-        required_scopes = await _get_prm_uri(body.prm_uri, client_name, session)
+        client_name = body.client_name if body.client_name else client.client_name
+        required_scopes, prm_err = await _get_prm_uri(body.prm_uri, client_name, session)
+        if prm_err:
+            return prm_err
         client.prm_uri = body.prm_uri
         client.required_scopes = required_scopes
     if body.grant_types is not None:
@@ -211,24 +200,30 @@ async def update_client(
     session.refresh(client)
 
     logger.info("Client updated: %s", client.client_id)
-    return {"detail": "Client updated"}
+    return json_message("Client updated.")
 
 
-@router.delete("/{client_id}")
-async def delete_client(
-    client_id: str,
-    request: Request,
-    session: Session = Depends(get_session),
-):
-    if "admin" not in request.state.identity_roles:
-        raise HTTPException(status_code=403, detail="Admin access required")
+async def delete_client(request: Request):
+    if not request.user.is_admin:
+        return json_error("Admin access required", status_code=403)
 
+    session = request.state.session
+    client_id = request.path_params["client_id"]
     client = OAuthClient.get_by_client_id(session, client_id)
     if not client:
-        raise HTTPException(status_code=404, detail="Client not found")
+        return json_error("Client not found", status_code=404)
 
     session.delete(client)
     session.commit()
 
     logger.info("Client deleted: %s", client_id)
-    return {"detail": "Client deleted"}
+    return json_message("Client deleted.")
+
+
+routes = [
+    Route("/clients/", create_client, methods=["POST"]),
+    Route("/clients/", list_clients, methods=["GET"]),
+    Route("/clients/{client_id}", get_client, methods=["GET"]),
+    Route("/clients/{client_id}", update_client, methods=["PUT"]),
+    Route("/clients/{client_id}", delete_client, methods=["DELETE"]),
+]

@@ -1,19 +1,17 @@
 import logging
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
-from sqlmodel import Session
+from starlette.requests import Request
+from starlette.routing import Route
 
-from verys.database import get_session
 from verys.models.external_provider import ExternalProvider
 from verys.models.external_token import ExternalToken
 from verys.models.scope import Scope
 from verys.modules.encryption import encrypt_field
+from verys.modules.http import json_error, json_message, read_model
 
 logger = logging.getLogger("verys.providers")
-
-router = APIRouter(prefix="/providers", tags=["Providers"])
 
 
 class ProviderCreateRequest(BaseModel):
@@ -37,38 +35,48 @@ class ProviderUpdateRequest(BaseModel):
     scopes: list[str] | None = None
 
 
-@router.post("/", status_code=201)
-async def create_provider(
-    request: Request,
-    body: ProviderCreateRequest,
-    session: Session = Depends(get_session),
-):
-    if "admin" not in request.state.identity_roles:
-        raise HTTPException(status_code=403, detail="Admin access required")
+def _serialize(provider: ExternalProvider) -> dict:
+    return {
+        "provider_id": provider.provider_id,
+        "display_name": provider.display_name,
+        "client_id": provider.client_id,
+        "authorization_endpoint": provider.authorization_endpoint,
+        "token_endpoint": provider.token_endpoint,
+        "jwks_uri": provider.jwks_uri,
+        "userinfo_endpoint": provider.userinfo_endpoint,
+        "scopes": provider.scopes,
+        "enabled": provider.enabled,
+        "created_at": provider.created_at.isoformat() if provider.created_at else None,
+    }
 
-    existing = ExternalProvider.get_by_provider_id(session, body.provider_id)
-    if existing:
-        raise HTTPException(status_code=409, detail="Provider already exists")
+
+async def create_provider(request: Request):
+    if not request.user.is_admin:
+        return json_error("Admin access required", status_code=403)
+    body, err = await read_model(request, ProviderCreateRequest)
+    if err:
+        return err
+
+    session = request.state.session
+    if ExternalProvider.get_by_provider_id(session, body.provider_id):
+        return json_error("Provider already exists", status_code=409)
 
     # Fetch OIDC discovery to get jwks_uri
     try:
         async with httpx.AsyncClient() as client:
-            discovery_response = await client.get(body.discovery_url, headers={"Accept": "application/json"})
+            discovery_response = await client.get(
+                body.discovery_url, headers={"Accept": "application/json"}
+            )
         if discovery_response.status_code != 200:
-            raise HTTPException(status_code=400, detail="Failed to fetch OIDC discovery document")
+            return json_error("Failed to fetch OIDC discovery document")
         discovery = discovery_response.json()
         jwks_uri = discovery.get("jwks_uri")
         if not jwks_uri:
-            raise HTTPException(status_code=400, detail="OIDC discovery document missing jwks_uri")
+            return json_error("OIDC discovery document missing jwks_uri")
         userinfo_endpoint = discovery.get("userinfo_endpoint")
     except httpx.RequestError as e:
-        logger.error(
-            "Failed to fetch discovery URL %s: %s",
-            body.discovery_url,
-            e,
-            exc_info=True
-        )
-        raise HTTPException(status_code=400, detail=f"Failed to reach discovery URL: {e}")
+        logger.error("Failed to fetch discovery URL %s: %s", body.discovery_url, e, exc_info=True)
+        return json_error(f"Failed to reach discovery URL: {e}")
 
     provider = ExternalProvider(
         provider_id=body.provider_id,
@@ -86,78 +94,36 @@ async def create_provider(
     session.refresh(provider)
 
     logger.info("Provider created: %s", provider.provider_id)
-    return {
-        "provider_id": provider.provider_id,
-        "display_name": provider.display_name,
-        "client_id": provider.client_id,
-        "authorization_endpoint": provider.authorization_endpoint,
-        "token_endpoint": provider.token_endpoint,
-        "jwks_uri": provider.jwks_uri,
-        "userinfo_endpoint": provider.userinfo_endpoint,
-        "scopes": provider.scopes,
-        "enabled": provider.enabled,
-        "created_at": provider.created_at.isoformat() if provider.created_at else None,
-    }
+    return json_message("Provider created.", status_code=201, **_serialize(provider))
 
 
-@router.get("/")
-async def list_providers(
-    session: Session = Depends(get_session),
-):
-    providers = ExternalProvider.all(session)
-    return [
-        {
-            "provider_id": p.provider_id,
-            "display_name": p.display_name,
-            "client_id": p.client_id,
-            "authorization_endpoint": p.authorization_endpoint,
-            "token_endpoint": p.token_endpoint,
-            "jwks_uri": p.jwks_uri,
-            "userinfo_endpoint": p.userinfo_endpoint,
-            "scopes": p.scopes,
-            "enabled": p.enabled,
-            "created_at": p.created_at.isoformat() if p.created_at else None,
-        }
-        for p in providers
-    ]
+async def list_providers(request: Request):
+    session = request.state.session
+    return json_message(
+        "Providers retrieved.",
+        providers=[_serialize(p) for p in ExternalProvider.all(session)],
+    )
 
 
-@router.get("/{provider_id}")
-async def get_provider(
-    provider_id: str,
-    session: Session = Depends(get_session),
-):
-    provider = ExternalProvider.get_by_provider_id(session, provider_id)
+async def get_provider(request: Request):
+    session = request.state.session
+    provider = ExternalProvider.get_by_provider_id(session, request.path_params["provider_id"])
     if not provider:
-        raise HTTPException(status_code=404, detail="Provider not found")
-
-    return {
-        "provider_id": provider.provider_id,
-        "display_name": provider.display_name,
-        "client_id": provider.client_id,
-        "authorization_endpoint": provider.authorization_endpoint,
-        "token_endpoint": provider.token_endpoint,
-        "jwks_uri": provider.jwks_uri,
-        "userinfo_endpoint": provider.userinfo_endpoint,
-        "scopes": provider.scopes,
-        "enabled": provider.enabled,
-        "created_at": provider.created_at.isoformat() if provider.created_at else None,
-    }
+        return json_error("Provider not found", status_code=404)
+    return json_message("Provider retrieved.", **_serialize(provider))
 
 
-@router.put("/{provider_id}")
-async def update_provider(
-    provider_id: str,
-    body: ProviderUpdateRequest,
-    request: Request,
-    session: Session = Depends(get_session),
-):
-    if "admin" not in request.state.identity_roles:
-        raise HTTPException(status_code=403, detail="Admin access required")
+async def update_provider(request: Request):
+    if not request.user.is_admin:
+        return json_error("Admin access required", status_code=403)
+    body, err = await read_model(request, ProviderUpdateRequest)
+    if err:
+        return err
 
-    provider = ExternalProvider.get_by_provider_id(session, provider_id)
+    session = request.state.session
+    provider = ExternalProvider.get_by_provider_id(session, request.path_params["provider_id"])
     if not provider:
-        raise HTTPException(status_code=404, detail="Provider not found")
+        return json_error("Provider not found", status_code=404)
 
     if body.display_name is not None:
         provider.display_name = body.display_name
@@ -179,28 +145,23 @@ async def update_provider(
     session.refresh(provider)
 
     logger.info("Provider updated: %s", provider.provider_id)
-    return {"detail": "Provider updated"}
+    return json_message("Provider updated.")
 
 
-@router.delete("/{provider_id}")
-async def delete_provider(
-    provider_id: str,
-    request: Request,
-    session: Session = Depends(get_session),
-):
-    if "admin" not in request.state.identity_roles:
-        raise HTTPException(status_code=403, detail="Admin access required")
+async def delete_provider(request: Request):
+    if not request.user.is_admin:
+        return json_error("Admin access required", status_code=403)
 
+    session = request.state.session
+    provider_id = request.path_params["provider_id"]
     provider = ExternalProvider.get_by_provider_id(session, provider_id)
     if not provider:
-        raise HTTPException(status_code=404, detail="Provider not found")
+        return json_error("Provider not found", status_code=404)
 
-    # Delete associated scope
     scope = Scope.get_by_provider(session, provider_id)
     if scope:
         session.delete(scope)
 
-    # Delete associated external tokens for all users
     tokens = ExternalToken.get_all_for_provider(session, provider_id)
     for t in tokens:
         session.delete(t)
@@ -208,9 +169,14 @@ async def delete_provider(
     session.delete(provider)
     session.commit()
 
-    logger.info(
-        "Provider deleted: %s (with %d tokens)",
-        provider_id,
-        len(tokens)
-    )
-    return {"detail": "Provider deleted"}
+    logger.info("Provider deleted: %s (with %d tokens)", provider_id, len(tokens))
+    return json_message("Provider deleted.")
+
+
+routes = [
+    Route("/providers/", create_provider, methods=["POST"]),
+    Route("/providers/", list_providers, methods=["GET"]),
+    Route("/providers/{provider_id}", get_provider, methods=["GET"]),
+    Route("/providers/{provider_id}", update_provider, methods=["PUT"]),
+    Route("/providers/{provider_id}", delete_provider, methods=["DELETE"]),
+]

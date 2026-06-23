@@ -34,7 +34,7 @@ def test_authorize_invalid_client_id(client):
         follow_redirects=False,
     )
     assert res.status_code == 400
-    assert 'Invalid client_id' in res.json()['detail']
+    assert 'Invalid client_id' in res.json()['error']
 
 
 def test_authorize_invalid_redirect_uri(session, client):
@@ -50,7 +50,7 @@ def test_authorize_invalid_redirect_uri(session, client):
         follow_redirects=False,
     )
     assert res.status_code == 400
-    assert 'Invalid redirect_uri' in res.json()['detail']
+    assert 'Invalid redirect_uri' in res.json()['error']
 
 
 def test_authorize_unsupported_response_type(session, client):
